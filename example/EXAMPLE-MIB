@@ -1,0 +1,48 @@
+EXAMPLE-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, enterprises FROM SNMPv2-SMI;
+
+example MODULE-IDENTITY
+    LAST-UPDATED "202608130000Z"
+    ORGANIZATION "Example Org"
+    CONTACT-INFO "support@example.org"
+    DESCRIPTION "Example MIB"
+    ::= { enterprises 99999 }
+
+myScalar OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION "A scalar example"
+    ::= { example 1 }
+
+myTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF MyEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "Example table"
+    ::= { example 2 }
+
+MyEntry OBJECT-TYPE
+    SYNTAX      SEQUENCE {
+        myIndex Integer32,
+        myValue OCTET STRING
+    }
+    MAX-ACCESS not-accessible
+    STATUS current
+    ::= { myTable 1 }
+
+myIndex OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    ::= { MyEntry 1 }
+
+myValue OBJECT-TYPE
+    SYNTAX OCTET STRING
+    MAX-ACCESS read-write
+    STATUS current
+    ::= { MyEntry 2 }
+
+END

@@ -1,0 +1,1 @@
+# Keep data directory for runtime artifacts (DBs). DB files are gitignored.

@@ -1,0 +1,29 @@
+{
+  "mib": ".\\scaffold\\EXAMPLE-MIB",
+  "objects": [
+    {
+      "name": "MODULE-IDENTITY,",
+      "raw": "MODULE-IDENTITY, OBJECT-TYPE, enterprises FROM SNMPv2-SMI;"
+    },
+    {
+      "name": "myScalar",
+      "raw": "myScalar OBJECT-TYPE"
+    },
+    {
+      "name": "myTable",
+      "raw": "myTable OBJECT-TYPE"
+    },
+    {
+      "name": "MyEntry",
+      "raw": "MyEntry OBJECT-TYPE"
+    },
+    {
+      "name": "myIndex",
+      "raw": "myIndex OBJECT-TYPE"
+    },
+    {
+      "name": "myValue",
+      "raw": "myValue OBJECT-TYPE"
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache
+.pyre/
+.ipynb_checkpoints/
+
+# SQLite runtime data
+*.sqlite
+*.sqlite3
+data/*.sqlite
+data/*.sqlite3
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+site/
+
+# Coverage / test reports
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local environment and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Logs and temp files
+*.log
+tmp/
+temp/
+*.bak
+*.orig
+
+# Editor / IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Generated artifacts (don't commit generated code or example output)
+# ignore files inside generated_handlers and variants, but not the directory itself (so .gitkeep can be tracked)
+scaffold/generated_handlers/*
+scaffold/generated_handlers_*/**
+scaffold/generated_handlers_improved/*
+scaffold/generated_handlers_text/*
+scaffold/mib_py_*/
+scaffold/*.pyc
+
+# Allow .gitkeep files in generated folders so empty folders are preserved
+!important: keep .gitkeep in generated folders
+!scaffold/generated_handlers/.gitkeep
+!scaffold/generated_handlers_improved/.gitkeep
+!scaffold/generated_handlers_text/.gitkeep
+!scaffold/mibs/.gitkeep
+!data/.gitkeep
+
+# Generated schema examples and parser/compiler temp files
+docs/schema_example*.json
+
+# AgentX demo database (already covered by *.sqlite but explicit)
+data/db.sqlite
