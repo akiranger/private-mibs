@@ -1,36 +1,97 @@
-AgentX MIB 永続化フレームワーク（プロトタイプ）
+# AgentX MIB Persistence Framework
 
-概要
+A prototype framework for generating MIB-driven schemas and managing AgentX-style subagent state with SQLite for persistence and Redis for volatile runtime data.
 
-SMIv2 MIB からスキーマを生成し、SQLite（永続）＋Redis（揮発）で管理する AgentX サブエージェント向けのプロトタイプです。
-詳細は docs/ 以下にまとめています。
+## Overview
 
-クイックスタート
+This project demonstrates a workflow for:
 
-前提: Python 3.8+
+- parsing SMIv2 MIB definitions into schema data
+- generating Python handlers from that schema
+- persisting managed values with SQLite
+- using Redis for transient or cache-like state
+- simulating GET/SET operations for prototype validation
 
-1) （任意）依存を入れる
-   pip install redis pysmi pysnmp
+The repository is intended as a lightweight experimental foundation for MIB-aware AgentX development.
 
-2) サンプルMIBをパースしてスキーマ生成
-   python scaffold\mib_parser_text_advanced.py example\EXAMPLE-MIB > docs\schema_example_text.json
+## Features
 
-3) スキーマからハンドラを生成
-   python scaffold\generator.py docs\schema_example_text.json scaffold\generated_handlers_improved
+- SMIv2 MIB parsing and schema extraction
+- Generator-based handler creation from schema definitions
+- SQLite-backed persistent state management
+- Redis-backed ephemeral state management
+- Demo flow for simulated GET/SET behavior
+- Example schema and documentation for experimentation
 
-4) デモ（GET/SET を模擬）
-   python scaffold\agentx_demo.py myScalar get
-   python scaffold\agentx_demo.py myScalar set 123
+## Project Structure
 
-運用ノート
+```text
+.
+├── README.md
+├── data/
+├── design/
+├── docs/
+├── example/
+├── scaffold/
+│   ├── generated_handlers/
+│   ├── generated_handlers_improved/
+│   ├── generated_handlers_text/
+│   ├── mibs/
+│   └── ...
+├── tests/
+└── ...
+```
 
-- 生成物（scaffold/generated_handlers*）は Git 管理対象外です（.gitignore）。空フォルダ保持のため .gitkeep を置いてあります。
-- pysmi/pysnmp を導入するとより正確な MIB 抽出が可能ですが、標準MIBの配置が必要です。詳しくは docs/parser.md と docs/agentx_integration.md を参照してください。
+## Quick Start
 
-ドキュメント
+Prerequisites: Python 3.8+
 
-主なドキュメント: docs/overview.md, docs/quickstart.md, docs/parser.md, docs/persistence.md, docs/generator.md, docs/architecture.md
+1. Install optional dependencies
 
-貢献
+```bash
+pip install redis pysmi pysnmp
+```
 
-Issue/PR を歓迎します。
+2. Parse the sample MIB and generate a schema JSON
+
+```bash
+python scaffold\mib_parser_text_advanced.py example\EXAMPLE-MIB > docs\schema_example_text.json
+```
+
+3. Generate handlers from the schema
+
+```bash
+python scaffold\generator.py docs\schema_example_text.json scaffold\generated_handlers_improved
+```
+
+4. Run the demo flow (simulated GET/SET)
+
+```bash
+python scaffold\agentx_demo.py myScalar get
+python scaffold\agentx_demo.py myScalar set 123
+```
+
+## Documentation
+
+Key documents:
+
+- [docs/overview.md](docs/overview.md)
+- [docs/quickstart.md](docs/quickstart.md)
+- [docs/parser.md](docs/parser.md)
+- [docs/persistence.md](docs/persistence.md)
+- [docs/generator.md](docs/generator.md)
+- [docs/architecture.md](docs/architecture.md)
+- [docs/agentx_integration.md](docs/agentx_integration.md)
+
+## Notes
+
+- Generated code under `scaffold/generated_handlers*` is kept out of Git tracking via `.gitignore`; placeholder `.gitkeep` files are included so the directories remain in the repository.
+- Installing `pysmi` and `pysnmp` can improve MIB extraction accuracy, but a standard MIB repository or proper local MIB configuration may still be needed. See [docs/parser.md](docs/parser.md) and [docs/agentx_integration.md](docs/agentx_integration.md) for more information.
+
+## Contributing
+
+Issues and pull requests are welcome.
+
+---
+
+This project is a prototype for experimentation, schema-driven agent generation, and MIB persistence research.
