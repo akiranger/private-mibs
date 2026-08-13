@@ -13,7 +13,7 @@ SMIv2 MIB からスキーマを生成し、SQLite（永続）＋Redis（揮発�
    pip install redis pysmi pysnmp
 
 2) サンプルMIBをパースしてスキーマ生成
-   python scaffold\mib_parser_text_advanced.py scaffold\EXAMPLE-MIB > docs\schema_example_text.json
+   python scaffold\mib_parser_text_advanced.py example\EXAMPLE-MIB > docs\schema_example_text.json
 
 3) スキーマからハンドラを生成
    python scaffold\generator.py docs\schema_example_text.json scaffold\generated_handlers_improved

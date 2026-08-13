@@ -12,10 +12,10 @@ pip install redis pysmi
 スキャフォールドの実行
 
 1) サンプル MIB をパースして JSON スキーマを作成
-   python scaffold\mib_parser.py scaffold\EXAMPLE-MIB > scaffold\example_schema.json
+   python scaffold\mib_parser.py example\EXAMPLE-MIB > example\example_schema.json
 
 2) スキーマからハンドラを生成
-   python scaffold\generator.py scaffold\example_schema.json scaffold\generated_handlers
+      python scaffold\generator.py example\example_schema.json scaffold\generated_handlers
 
 3) 生成ハンドラを呼ぶデモ（GET/SET の模擬）
    python scaffold\agentx_demo.py myScalar get
