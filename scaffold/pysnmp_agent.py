@@ -70,6 +70,76 @@ def load_usm_users_from_file(path):
         register_usm_user(u.get('username'), u.get('auth_protocol'), u.get('auth_key'), u.get('priv_protocol'), u.get('priv_key'))
 
 
+def load_usm_users_from_env(env_var='USM_USERS_JSON'):
+    """Load USM users JSON from an environment variable. Returns number loaded."""
+    import os, json
+    payload = os.environ.get(env_var)
+    if not payload:
+        return 0
+    try:
+        data = json.loads(payload)
+    except Exception:
+        logger.exception('failed to parse USM users from env var %s', env_var)
+        return 0
+    for u in data:
+        register_usm_user(u.get('username'), u.get('auth_protocol'), u.get('auth_key'), u.get('priv_protocol'), u.get('priv_key'))
+    return len(data)
+
+
+def load_usm_users_from_keyring(prefix='usm_user_'):
+    """Attempt to load USM user secrets from python-keyring using a naming prefix.
+
+    For each username stored, expects JSON payload or individual keys in keyring.
+    This is best-effort and will be no-op if keyring is unavailable. Returns count loaded.
+    """
+    try:
+        import keyring
+    except Exception:
+        logger.debug('keyring not available; skipping load_usm_users_from_keyring')
+        return 0
+    counts = 0
+    # Attempt to find a 'user list' key
+    try:
+        user_list = keyring.get_password('usm', 'user_list')
+        if user_list:
+            import json
+            try:
+                data = json.loads(user_list)
+            except Exception:
+                logger.exception('failed to parse user_list from keyring')
+                data = None
+            if data:
+                for u in data:
+                    # attempt to read per-user secrets by name
+                    auth_key = keyring.get_password('usm', f"{u['username']}_auth_key")
+                    priv_key = keyring.get_password('usm', f"{u['username']}_priv_key")
+                    register_usm_user(u.get('username'), u.get('auth_protocol'), auth_key, u.get('priv_protocol'), priv_key)
+                    counts += 1
+                return counts
+    except Exception:
+        logger.exception('error reading usm user_list from keyring')
+    return 0
+
+
+def load_acl_from_file(path):
+    """Load ACL_MAP from a JSON file and merge into ACL_MAP in-memory. Returns number of entries loaded."""
+    import json
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        logger.exception('failed to load ACL file %s', path)
+        return 0
+    if not isinstance(data, dict):
+        logger.error('ACL file must contain an object/dict')
+        return 0
+    loaded = 0
+    for k, v in data.items():
+        ACL_MAP[k] = v
+        loaded += 1
+    return loaded
+
+
 def register_usm_with_pysnmp(snmpEngine):
     """Register USM users stored in-memory with a pysnmp snmpEngine.
 
