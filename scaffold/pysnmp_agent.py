@@ -189,22 +189,32 @@ def _check_acl(oid_or_handler, op, ctx):
     # if no explicit entry, default allow both GET and SET (tests expect permissive default)
     if not entry:
         return True
-    # entry can be boolean flags or lists; normalize
-    if isinstance(entry.get('read', entry), bool) or isinstance(entry.get('write', entry), bool):
-        if op == 'get':
-            return bool(entry.get('read', True))
-        else:
-            return bool(entry.get('write', False))
-    # or lists of principals
+    # entry may specify booleans or lists per op. Handle each op separately.
+    # If both read/write are explicit booleans, use them directly.
+    read_val = entry.get('read')
+    write_val = entry.get('write')
+    if isinstance(read_val, bool) and isinstance(write_val, bool):
+        return read_val if op == 'get' else write_val
+
+    # If op-specific value is a boolean, respect it.
+    if op == 'get' and isinstance(read_val, bool):
+        return read_val
+    if op == 'set' and isinstance(write_val, bool):
+        return write_val
+
+    # If op-specific value is a list of principals, require principal present in ctx.
     principal = None
     if ctx and isinstance(ctx, dict):
         principal = ctx.get('principal') or ctx.get('user')
-    allowed = entry.get('read' if op == 'get' else 'write', [])
+
+    allowed = read_val if op == 'get' else write_val
     if isinstance(allowed, list):
         if principal is None:
             return False
         return principal in allowed
-    return False
+
+    # If no explicit rule for this op, conservative default: allow GET, deny SET
+    return op == 'get'
 
 
 
