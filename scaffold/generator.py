@@ -193,15 +193,19 @@ def set_{name}(oid, value, ctx=None):
             # coerce/validate integer columns first
             try:
                 value = _validate_row(value)
-            except ValueError as e:
-                raise ValueError(f'validation failed: {e}')
+            except ValueError:
+                return False
             # run column-type validation
             ok, err = _validate_data(value, cols)
             if not ok:
-                raise ValueError(f'validation failed: {err}')
-            # persist atomically (SQLiteAdapter handles transactions for upsert)
-            db.upsert('{name}', value, unique_cols={unique_cols})
-            return True
+                return False
+            # persist atomically within a transaction
+            try:
+                with db.transaction():
+                    db.upsert('{name}', value, unique_cols={unique_cols})
+                return True
+            except Exception:
+                return False
         else:
             # set single column 'value' if present
             try:
