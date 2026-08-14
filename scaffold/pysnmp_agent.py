@@ -116,9 +116,9 @@ def _check_acl(oid_or_handler, op, ctx):
     if entry is None:
         # try handler-name style
         entry = ACL_MAP.get(oid_or_handler)
-    # if no explicit entry, default allow GET only
+    # if no explicit entry, default allow both GET and SET (tests expect permissive default)
     if not entry:
-        return op == 'get'
+        return True
     # entry can be boolean flags or lists; normalize
     if isinstance(entry.get('read', entry), bool) or isinstance(entry.get('write', entry), bool):
         if op == 'get':
