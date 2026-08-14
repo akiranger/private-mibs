@@ -357,6 +357,22 @@ def _oid_to_tuple(oid_str):
         raise ValueError(f'Invalid OID string: {oid_str}')
 
 
+def _oid_prefix_tuple(oid_str):
+    """Return leading numeric oid tuple up to first non-numeric segment.
+
+    For '1.3.6.1.4.1.example.1.1' returns (1,3,6,1,4,1).
+    If no numeric segments are present, returns empty tuple.
+    """
+    parts = [p for p in oid_str.strip().split('.') if p != '']
+    nums = []
+    for p in parts:
+        try:
+            nums.append(int(p))
+        except Exception:
+            break
+    return tuple(nums)
+
+
 def _sorted_oids():
     """Return OID_MAP keys sorted by numeric OID tuple."""
     try:
@@ -431,17 +447,47 @@ def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
     results = []
 
     # Helper: find next mapped candidate OID string greater than a given OID tuple
-    def _find_next_candidate_after(oid_tuple):
+    def _find_next_candidate_after(oid_tuple_or_str):
+        """Find next candidate OID string given either a numeric tuple or an input OID string
+
+        Accepts either a tuple of ints (from _oid_to_tuple) or the original OID string
+        (which may contain symbolic identifiers). If given a string, uses its numeric
+        prefix for matching against candidate numeric OIDs.
+        """
+        # If caller passed a tuple already, use it directly
+        is_tuple = isinstance(oid_tuple_or_str, tuple)
+        if is_tuple:
+            seek_tuple = oid_tuple_or_str
+            prefix_tuple = None
+        else:
+            seek_tuple = None
+            prefix_tuple = _oid_prefix_tuple(oid_tuple_or_str)
+
         for candidate in _sorted_oids():
             try:
                 cand_t = _oid_to_tuple(candidate)
-                # allow candidate equal to the requested start (so table first-row can be returned)
-                if cand_t >= oid_tuple:
-                    return candidate
-                # if seek is a concrete OID that extends the candidate (table index suffix),
-                # continue returning the same candidate so table rows are iterated
-                if len(oid_tuple) > len(cand_t) and oid_tuple[:len(cand_t)] == cand_t:
-                    return candidate
+                # If we have a full numeric seek tuple, use numeric comparison
+                if seek_tuple is not None:
+                    # allow candidate equal to the requested start (so table first-row can be returned)
+                    if cand_t >= seek_tuple:
+                        return candidate
+                    # if seek is a concrete OID that extends the candidate (table index suffix),
+                    # continue returning the same candidate so table rows are iterated
+                    if len(seek_tuple) > len(cand_t) and seek_tuple[:len(cand_t)] == cand_t:
+                        return candidate
+                else:
+                    # use prefix-based matching: if candidate starts with the numeric prefix of the
+                    # provided symbolic oid, treat it as the next candidate
+                    if prefix_tuple and len(prefix_tuple) > 0:
+                        if cand_t[:len(prefix_tuple)] == prefix_tuple:
+                            return candidate
+                    else:
+                        # no numeric prefix available; fall back to lexicographic compare
+                        try:
+                            if candidate >= oid_tuple_or_str:
+                                return candidate
+                        except Exception:
+                            continue
             except Exception:
                 continue
         return None
@@ -450,7 +496,11 @@ def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
     for oid in start_oids[:non_repeaters]:
         try:
             # find next candidate and resolve a concrete OID/value
-            next_cand = _find_next_candidate_after(_oid_to_tuple(oid))
+            try:
+                next_cand = _find_next_candidate_after(_oid_to_tuple(oid))
+            except ValueError:
+                # input may contain symbolic identifiers; fall back to prefix-based match
+                next_cand = _find_next_candidate_after(oid)
             if not next_cand:
                 continue
             name = OID_MAP.get(next_cand)
@@ -482,7 +532,13 @@ def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
     # Step 2: repeating vars -> iterate up to max_repetitions rows per repeating OID
     repeating_oids = start_oids[non_repeaters:]
     # maintain per-oid seek positions as tuples (current_oid_tuple) representing last returned concrete OID
-    seek_positions = {oid: _oid_to_tuple(oid) for oid in repeating_oids}
+    seek_positions = {}
+    for oid in repeating_oids:
+        try:
+            seek_positions[oid] = _oid_to_tuple(oid)
+        except ValueError:
+            # store numeric prefix when full parse fails
+            seek_positions[oid] = _oid_prefix_tuple(oid)
 
     for _rep in range(max_repetitions):
         any_appended = False
