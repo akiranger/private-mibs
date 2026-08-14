@@ -83,10 +83,54 @@ def handle_set(oid_str, value, ctx=None):
         raise
 
 
+def _oid_to_tuple(oid_str):
+    """Convert '1.2.3' -> (1,2,3). Treat empty segments as zero; non-int raises ValueError."""
+    try:
+        return tuple(int(x) for x in oid_str.strip().split('.') if x != '')
+    except Exception:
+        raise ValueError(f'Invalid OID string: {oid_str}')
+
+
+def _sorted_oids():
+    """Return OID_MAP keys sorted by numeric OID tuple."""
+    try:
+        return sorted(OID_MAP.keys(), key=lambda o: _oid_to_tuple(o))
+    except Exception:
+        # fallback to lexicographic
+        logger.exception("Failed numeric sort of OID_MAP keys, falling back to lexicographic")
+        return sorted(OID_MAP.keys())
+
+
+def handle_getnext(oid_str, ctx=None):
+    """Handle GETNEXT by returning value for the numerically-next mapped OID.
+
+    This is a best-effort implementation: it selects the next OID in OID_MAP.
+    For table semantics, generated handlers may implement next_oid_<name> for finer control.
+    """
+    logger.debug("GETNEXT request for %s", oid_str)
+    try:
+        requested = _oid_to_tuple(oid_str)
+    except ValueError:
+        logger.error("GETNEXT received invalid OID: %s", oid_str)
+        raise
+    oids = _sorted_oids()
+    for candidate in oids:
+        try:
+            if _oid_to_tuple(candidate) > requested:
+                logger.debug("GETNEXT maps %s -> %s", oid_str, candidate)
+                # delegate to existing GET handler
+                return handle_get(candidate, ctx)
+        except Exception:
+            logger.exception("Error comparing OIDs %s and %s", candidate, oid_str)
+            continue
+    logger.debug("No next OID found for %s", oid_str)
+    return None
+
+
 if __name__ == '__main__':
     import sys
     if len(sys.argv) < 3:
-        print('Usage: python pysnmp_agent.py get|set <oid> [value]')
+        print('Usage: python pysnmp_agent.py get|set|getnext <oid> [value]')
         raise SystemExit(2)
     op = sys.argv[1]
     oid = sys.argv[2]
@@ -98,6 +142,12 @@ if __name__ == '__main__':
             raise SystemExit(2)
         handle_set(oid, sys.argv[3])
         print('OK')
+    elif op == 'getnext':
+        val = handle_getnext(oid)
+        if val is None:
+            print('NO_SUCH_OBJECT')
+        else:
+            print(val)
     else:
         print('unknown op')
         raise SystemExit(2)
