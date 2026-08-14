@@ -438,6 +438,10 @@ def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
                 # allow candidate equal to the requested start (so table first-row can be returned)
                 if cand_t >= oid_tuple:
                     return candidate
+                # if seek is a concrete OID that extends the candidate (table index suffix),
+                # continue returning the same candidate so table rows are iterated
+                if len(oid_tuple) > len(cand_t) and oid_tuple[:len(cand_t)] == cand_t:
+                    return candidate
             except Exception:
                 continue
         return None
