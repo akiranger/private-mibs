@@ -139,7 +139,10 @@ def parse_mib_to_json(mib_path):
     # prefer pysmi-backed parser when available
     try:
         if _mib_parser_pysmi is not None and getattr(_mib_parser_pysmi, 'PYSPI_AVAILABLE', False):
-            return _mib_parser_pysmi.parse_with_pysmi(mib_path)
+            parsed = _mib_parser_pysmi.parse_with_pysmi(mib_path)
+            # If pysmi produced useful objects, prefer it. Otherwise fall back to the simple text parser
+            if isinstance(parsed, dict) and parsed.get('objects'):
+                return parsed
     except Exception:
         # if anything goes wrong with pysmi path, continue to fallback
         pass

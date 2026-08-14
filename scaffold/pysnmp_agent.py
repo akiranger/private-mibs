@@ -525,7 +525,17 @@ def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
                     except Exception:
                         idx = None
                     if idx is not None:
-                        resolved_oid = f"{next_cand}.{idx}" if not next_cand.endswith('.') else f"{next_cand}{idx}"
+                        # If the original request OID contains symbolic segments (non-numeric),
+                        # prefer constructing the resolved OID using the original input prefix so
+                        # returned OIDs preserve the user's symbolic base (tests expect this).
+                        def _has_symbolic_segment(s):
+                            return any(not p.isdigit() for p in s.strip().split('.') if p != '')
+
+                        if _has_symbolic_segment(oid):
+                            # use the original requested OID as the base for the resolved OID
+                            resolved_oid = f"{oid}.{idx}" if not oid.endswith('.') else f"{oid}{idx}"
+                        else:
+                            resolved_oid = f"{next_cand}.{idx}" if not next_cand.endswith('.') else f"{next_cand}{idx}"
                         val = handle_get(resolved_oid, ctx)
                         results.append((resolved_oid, val))
                         continue
