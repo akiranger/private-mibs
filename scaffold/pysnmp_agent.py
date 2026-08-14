@@ -21,6 +21,12 @@ OID_MAP = {
     # '1.3.6.1.4.1.example.1.1': 'myScalar',
 }
 
+# Simple ACL map: provide per-OID dicts like {'read': True, 'write': False}
+# Replace with external policy storage (file/DB/service) in production.
+ACL_MAP = {
+    # '1.3.6.1.4.1.example.1.1': {'read': True, 'write': True},
+}
+
 GENERATED_DIR = os.path.join(os.path.dirname(__file__), 'generated_handlers')
 
 
@@ -83,6 +89,10 @@ def handle_set(oid_str, value, ctx=None):
         name = OID_MAP.get(oid_str)
         if not name:
             raise KeyError(f'OID not mapped: {oid_str}')
+        # ACL check
+        acl = ACL_MAP.get(oid_str)
+        if acl is not None and not acl.get('write', False):
+            raise PermissionError(f'write denied for {oid_str}')
         mod = load_handler(name)
         fn = getattr(mod, f'set_{name}', None)
         if not fn:
