@@ -28,7 +28,7 @@ def test_handle_getbulk_basic(monkeypatch):
             return cur + 1
 
     fake = FakeHandler()
-    agent.OID_MAP['1.3.6.1.4.1.example.1.1'] = 'fake'
+    agent.OID_MAP['1.3.6.1.4.1.999.1.1'] = 'fake'
 
     # monkeypatch load_handler to return our fake instance
     monkeypatch.setattr(agent, 'load_handler', lambda name: fake)
