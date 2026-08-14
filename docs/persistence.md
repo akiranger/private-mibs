@@ -8,7 +8,7 @@ SQLiteAdapter
 
 - デフォルト DB: data/db.sqlite
 - create_table_for_object(name, columns): テーブル作成
-- upsert(table, data): 単純な挿入（ユニーク制約は未実装）
+- upsert(table, data, unique_cols=None): INSERT ... ON CONFLICT を用いた UPSERT をサポート。unique_cols 指定で一意制約を指定可能。トランザクションは transaction() コンテキストマネージャでサポート。
 - query_all(table): 全行取得
 
 RedisAdapter
