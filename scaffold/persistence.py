@@ -14,27 +14,58 @@ except Exception:
 
 
 class SQLiteAdapter:
-    def __init__(self, path='data/db.sqlite'):
+    def __init__(self, path='data/db.sqlite', pragmas=None):
+        """Initialize SQLite adapter.
+
+        pragmas: optional dict of PRAGMA names to values, e.g.
+          {'journal_mode': 'WAL', 'synchronous': 'NORMAL', 'busy_timeout': 30000}
+        If not provided, sane defaults for embedded use are applied.
+        """
         self.path = path
         dirpath = os.path.dirname(self.path)
         if dirpath:
             os.makedirs(dirpath, exist_ok=True)
-        # enable WAL mode and a busy timeout to improve concurrency for readers/writers
+        # enable connection with a reasonable timeout
         self._conn = sqlite3.connect(self.path, check_same_thread=False, timeout=30)
         self._conn.row_factory = sqlite3.Row
         self._in_transaction = False
+
+        # default pragmatic settings suitable for many embedded deployments
+        default_pragmas = {
+            'busy_timeout': 30000,    # milliseconds
+            'journal_mode': 'WAL',    # allow concurrent readers during writes
+            'synchronous': 'NORMAL',  # trade durability for speed on flash devices
+        }
+        if pragmas is None:
+            pragmas = default_pragmas
+        else:
+            # merge defaults with provided ones
+            merged = dict(default_pragmas)
+            merged.update(pragmas)
+            pragmas = merged
+
         try:
             cur = self._conn.cursor()
-            # Set busy timeout to 30s to reduce SQLITE_BUSY on concurrent writes
-            cur.execute('PRAGMA busy_timeout = 30000')
-            # Enable WAL for better concurrent reads/writes
-            cur.execute("PRAGMA journal_mode = WAL")
-            # Set synchronous to NORMAL for a balance between durability and performance on embedded devices
-            cur.execute("PRAGMA synchronous = NORMAL")
+            # apply provided pragmas
+            for k, v in pragmas.items():
+                if isinstance(v, int):
+                    cur.execute(f'PRAGMA {k} = {v}')
+                else:
+                    cur.execute(f"PRAGMA {k} = {v}")
             self._conn.commit()
         except Exception:
             # If pragmas fail, continue with defaults but log silently
             pass
+
+    def set_pragmas(self, pragmas: dict):
+        """Apply PRAGMA settings at runtime. pragmas is a dict of name->value."""
+        cur = self._conn.cursor()
+        for k, v in pragmas.items():
+            if isinstance(v, int):
+                cur.execute(f'PRAGMA {k} = {v}')
+            else:
+                cur.execute(f"PRAGMA {k} = {v}")
+        self._conn.commit()
 
     def execute(self, sql, params=()):
         cur = self._conn.cursor()
