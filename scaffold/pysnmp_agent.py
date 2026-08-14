@@ -529,7 +529,13 @@ def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
                         continue
                     resolved_oid = f"{candidate}.{next_index}" if not candidate.endswith('.') else f"{candidate}{next_index}"
                     try:
-                        val = handle_get(resolved_oid, ctx)
+                        fn = getattr(mod, f'get_{name}', None)
+                        if fn:
+                            # call handler get directly for the resolved OID
+                            val = _call_flexible(fn, resolved_oid, ctx)
+                        else:
+                            # fallback to generic GET which may map by base
+                            val = handle_get(candidate, ctx)
                         results.append((resolved_oid, val))
                         # update seek to the returned concrete OID tuple
                         seek_positions[oid] = _oid_to_tuple(resolved_oid)
