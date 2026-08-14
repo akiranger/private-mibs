@@ -25,6 +25,9 @@ DB_PATH = 'data/db.sqlite'
 # Optional OID base (dotted string) if known; used to map OIDs to index columns
 OID_BASE = {oid_base}
 
+# Columns that should be integers (auto-generated)
+INTEGER_COLS = {integer_cols}
+
 def _ensure_db():
     global db
     try:
@@ -95,6 +98,19 @@ def _oid_to_index_map(oid):
         return None
 
 
+def _validate_row(row):
+    """Validate and coerce row dict based on INTEGER_COLS. Raises ValueError on bad types."""
+    if not isinstance(row, dict):
+        raise ValueError('row must be a dict')
+    for k in INTEGER_COLS or []:
+        if k in row and row[k] is not None:
+            try:
+                row[k] = int(row[k])
+            except Exception:
+                raise ValueError(f'invalid integer for column {k}: {row[k]}')
+    return row
+
+
 def get_{name}(oid=None, ctx=None):
     """Return value by oid/index or latest for scalars"""
     _ensure_db()
@@ -134,6 +150,10 @@ def set_{name}(oid, value, ctx=None):
     else:
         # tables: expect dict or simple value
         if isinstance(value, dict):
+            try:
+                value = _validate_row(value)
+            except ValueError:
+                return False
             db.upsert('{name}', value, unique_cols={unique_cols})
             return True
         else:
@@ -238,6 +258,12 @@ def generate_handlers(schema_path, outdir):
             is_scalar = True
 
         cols_literal = '{' + ', '.join(f"'{k}': '{v}'" for k, v in columns.items()) + '}'
+        # integer columns for validation
+        integer_cols = [k for k, v in columns.items() if 'INT' in v.upper()]
+        if integer_cols:
+            integer_literal = '[' + ', '.join(f"'{c}'" for c in integer_cols) + ']'
+        else:
+            integer_literal = '[]'
         if unique_cols:
             unique_literal = '[' + ', '.join(f"'{c}'" for c in unique_cols) + ']'
         else:
@@ -245,12 +271,12 @@ def generate_handlers(schema_path, outdir):
 
         fname = os.path.join(outdir, f'{safe_name}.py')
         with open(fname, 'w', encoding='utf-8') as fh:
-            fh.write(HANDLER_TMPL.format(name=safe_name, columns=cols_literal, is_scalar=str(is_scalar), unique_cols=unique_literal, oid_base='None'))
+            fh.write(HANDLER_TMPL.format(name=safe_name, columns=cols_literal, is_scalar=str(is_scalar), unique_cols=unique_literal, oid_base='None', integer_cols=integer_literal))
 
     # If no objects, create a placeholder
     if not schema.get('objects'):
         with open(os.path.join(outdir, f'{mib}_placeholder.py'), 'w', encoding='utf-8') as fh:
-            fh.write(HANDLER_TMPL.format(name='placeholder', columns="{'value':'TEXT','updated_at':'TEXT'}", is_scalar='True', oid_base='None'))
+            fh.write(HANDLER_TMPL.format(name='placeholder', columns="{'value':'TEXT','updated_at':'TEXT'}", is_scalar='True', oid_base='None', integer_cols='[]'))
 
 
 if __name__ == '__main__':
