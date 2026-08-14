@@ -22,7 +22,7 @@ agent.OID_MAP['1.3.6.1.4.1.999.1.1'] = 'fake'
 agent.load_handler = lambda name: FakeHandler()
 
 print('Running smoke test for handle_getbulk...')
-res = agent.handle_getbulk(['1.3.6.1.4.1.example.1.1'], non_repeaters=0, max_repetitions=5)
+res = agent.handle_getbulk(['1.3.6.1.4.1.999.1.1'], non_repeaters=0, max_repetitions=5)
 print('Result len:', len(res))
 for oid, val in res:
     print(oid, '->', val)
