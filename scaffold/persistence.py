@@ -87,6 +87,15 @@ class SQLiteAdapter:
             self._conn.commit()
         return cur
 
+    def bulk_upsert(self, table, rows, unique_cols=None):
+        """Upsert multiple rows inside a single transaction to ensure atomicity."""
+        if not isinstance(rows, (list, tuple)):
+            raise ValueError('rows must be a list of dicts')
+        with self.transaction():
+            for r in rows:
+                self.upsert(table, r, unique_cols=unique_cols)
+        return True
+
     def query_all(self, table):
         cur = self.execute(f'SELECT * FROM "{table}"')
         return [dict(row) for row in cur.fetchall()]
