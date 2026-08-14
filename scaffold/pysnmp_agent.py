@@ -173,29 +173,9 @@ def load_handler(name, retries=2, backoff=0.05):
 def _call_flexible(fn, *args):
     """Call fn trying multiple signatures for backwards compatibility.
 
-    Tries: fn(*args), fn(args[1:]) etc. Useful when generated handlers vary.
+    Tries: fn(*args), fn(*args[1:]), fn() etc. Useful when generated handlers vary.
     """
     try:
-<<<<<<< HEAD
-        name = OID_MAP.get(oid_str)
-        if not name:
-            raise KeyError(f'OID not mapped: {oid_str}')
-        mod = load_handler(name)
-        fn = getattr(mod, f'get_{name}', None)
-        if not fn:
-            raise AttributeError(f'get_{name} not found in handler')
-        # Call handler with flexible signature support for legacy handlers.
-        try:
-            return fn(oid_str, ctx)
-        except TypeError:
-            try:
-                return fn(ctx)
-            except TypeError:
-                return fn()
-    except Exception:
-        logger.exception('handle_get failed for %s', oid_str)
-        # Reraise to let caller decide SNMP error handling, but keep agent alive
-=======
         return fn(*args)
     except TypeError:
         try:
@@ -232,7 +212,6 @@ def handle_get(oid_str, ctx=None):
         return _call_flexible(fn, oid_str, ctx)
     except Exception:
         logger.exception("Handler '%s' get failed for OID %s", name, oid_str)
->>>>>>> origin/main
         raise
 
 
