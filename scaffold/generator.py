@@ -22,6 +22,12 @@ import datetime
 
 DB_PATH = 'data/db.sqlite'
 
+# Optional OID base (dotted string) if known; used to map OIDs to index columns
+OID_BASE = {oid_base}
+
+# Columns that should be integers (auto-generated)
+INTEGER_COLS = {integer_cols}
+
 def _ensure_db():
     global db
     try:
@@ -42,6 +48,69 @@ def init_table():
     db.create_table_for_object('{name}', {columns}, unique_cols={unique_cols})
 
 
+def _parse_oid(oid):
+    """Normalize OID input to list of string components"""
+    if oid is None:
+        return []
+    if isinstance(oid, str):
+        parts = [p for p in oid.strip().split('.') if p != '']
+        return parts
+    if isinstance(oid, (list, tuple)):
+        return [str(p) for p in oid]
+    return []
+
+
+def _oid_to_index_map(oid):
+    """If OID_BASE and unique_cols are set, map trailing OID components to unique columns.
+    Returns dict of {col: value} or None if mapping not possible.
+    """
+    parts = _parse_oid(oid)
+    if not parts:
+        return None
+    if OID_BASE:
+        base = str(OID_BASE).split('.') if isinstance(OID_BASE, str) else []
+        if len(parts) <= len(base):
+            return None
+        if parts[:len(base)] != base:
+            return None
+        suffix = parts[len(base):]
+    else:
+        # no base known: use entire OID as suffix
+        suffix = parts
+
+    # if unique_cols provided, attempt to map last N suffix components to them
+    if {unique_cols} and {unique_cols} != 'None':
+        ucols = {unique_cols}
+        if len(suffix) < len(ucols):
+            return None
+        vals = suffix[-len(ucols):]
+        res = {}
+        for k, v in zip(ucols, vals):
+            try:
+                res[k] = int(v)
+            except Exception:
+                res[k] = v
+        return res
+    # fallback: treat last component as id
+    try:
+        return {'id': int(suffix[-1])}
+    except Exception:
+        return None
+
+
+def _validate_row(row):
+    """Validate and coerce row dict based on INTEGER_COLS. Raises ValueError on bad types."""
+    if not isinstance(row, dict):
+        raise ValueError('row must be a dict')
+    for k in INTEGER_COLS or []:
+        if k in row and row[k] is not None:
+            try:
+                row[k] = int(row[k])
+            except Exception:
+                raise ValueError(f'invalid integer for column {k}: {row[k]}')
+    return row
+
+
 def get_{name}(oid=None, ctx=None):
     """Return value by oid/index or latest for scalars"""
     _ensure_db()
@@ -50,8 +119,19 @@ def get_{name}(oid=None, ctx=None):
         if not rows:
             return None
         return rows[-1].get('value') if 'value' in rows[-1] else rows[-1]
-    # For tables, assume oid is a numeric index
-    # If unique index column exists, query by that column instead of id
+
+    # If unique index columns exist, try mapping from OID to index values
+    idx_map = _oid_to_index_map(oid)
+    if idx_map:
+        # build WHERE clause from idx_map
+        keys = list(idx_map.keys())
+        where = ' AND '.join([f'"{k}"=?' for k in keys])
+        params = tuple(idx_map[k] for k in keys)
+        cur = db.execute(f'SELECT * FROM "{name}" WHERE {where}', params)
+        r = cur.fetchone()
+        return dict(r) if r else None
+
+    # fallback: assume numeric id
     try:
         cur = db.execute('SELECT * FROM "{name}" WHERE id=?', (int(oid),))
     except Exception:
@@ -69,11 +149,24 @@ def set_{name}(oid, value, ctx=None):
         return True
     else:
         # tables: expect dict or simple value
-        if isinstance(value, dict):
-            # use transaction to ensure multi-column upserts are atomic
+        # Support batch updates: list of row dicts -> atomic bulk upsert
+        if isinstance(value, list):
             try:
-                with db.transaction() as cur:
-                    # simple upsert per provided keys
+                # validate rows
+                validated = []
+                for r in value:
+                    validated.append(_validate_row(r))
+                db.bulk_upsert('{name}', validated, unique_cols={unique_cols})
+                return True
+            except Exception:
+                return False
+        if isinstance(value, dict):
+            try:
+                value = _validate_row(value)
+            except ValueError:
+                return False
+            try:
+                with db.transaction():
                     db.upsert('{name}', value, unique_cols={unique_cols})
                 return True
             except Exception:
@@ -94,18 +187,23 @@ def next_oid_{name}(current_oid=None):
     rows = db.query_all('{name}')
     if not rows:
         return None
-    ids = [r['id'] for r in rows]
-    ids.sort()
-    if current_oid is None:
-        return ids[0]
-    try:
-        cur = int(current_oid)
-    except Exception:
-        return ids[0]
-    for i in ids:
-        if i > cur:
-            return i
-    return None
+    # sort by id if present
+    if 'id' in rows[0]:
+        ids = [r['id'] for r in rows]
+        ids.sort()
+        if current_oid is None:
+            return ids[0]
+        try:
+            cur = int(current_oid)
+        except Exception:
+            return ids[0]
+        for i in ids:
+            if i > cur:
+                return i
+        return None
+    else:
+        # fallback: return None
+        return None
 '''
 
 
@@ -146,10 +244,16 @@ def generate_handlers(schema_path, outdir):
                    columns[col_name] = col_type
                # ensure id primary key
                columns = {'id': 'INTEGER PRIMARY KEY AUTOINCREMENT', **columns}
-               # Heuristic: if first field name endswith Index or contains 'Index', use as unique index
-               first_field = entry.get('fields')[0].get('name') if entry.get('fields') else None
-               if first_field and ('Index' in first_field or first_field.lower().endswith('index')):
-                   unique_cols = [first_field]
+               # Heuristic: collect any field whose name suggests an index (contains 'Index' or endswith 'index')
+               index_fields = []
+               for f in entry.get('fields') or []:
+                   fname = f.get('name')
+                   if not fname:
+                       continue
+                   if 'Index' in fname or fname.lower().endswith('index') or 'index' == fname.lower():
+                       index_fields.append(fname)
+               if index_fields:
+                   unique_cols = index_fields
            else:
                # generic table
                columns = {'id': 'INTEGER PRIMARY KEY AUTOINCREMENT', 'value': 'TEXT', 'updated_at': 'TEXT'}
@@ -170,6 +274,12 @@ def generate_handlers(schema_path, outdir):
             is_scalar = True
 
         cols_literal = '{' + ', '.join(f"'{k}': '{v}'" for k, v in columns.items()) + '}'
+        # integer columns for validation
+        integer_cols = [k for k, v in columns.items() if 'INT' in v.upper()]
+        if integer_cols:
+            integer_literal = '[' + ', '.join(f"'{c}'" for c in integer_cols) + ']'
+        else:
+            integer_literal = '[]'
         if unique_cols:
             unique_literal = '[' + ', '.join(f"'{c}'" for c in unique_cols) + ']'
         else:
@@ -177,12 +287,12 @@ def generate_handlers(schema_path, outdir):
 
         fname = os.path.join(outdir, f'{safe_name}.py')
         with open(fname, 'w', encoding='utf-8') as fh:
-            fh.write(HANDLER_TMPL.format(name=safe_name, columns=cols_literal, is_scalar=str(is_scalar), unique_cols=unique_literal))
+            fh.write(HANDLER_TMPL.format(name=safe_name, columns=cols_literal, is_scalar=str(is_scalar), unique_cols=unique_literal, oid_base='None', integer_cols=integer_literal))
 
     # If no objects, create a placeholder
     if not schema.get('objects'):
         with open(os.path.join(outdir, f'{mib}_placeholder.py'), 'w', encoding='utf-8') as fh:
-            fh.write(HANDLER_TMPL.format(name='placeholder', columns="{'value':'TEXT','updated_at':'TEXT'}", is_scalar='True'))
+            fh.write(HANDLER_TMPL.format(name='placeholder', columns="{'value':'TEXT','updated_at':'TEXT'}", is_scalar='True', oid_base='None', integer_cols='[]'))
 
 
 if __name__ == '__main__':

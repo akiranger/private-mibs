@@ -122,12 +122,28 @@ def simple_parse_mib_text(path):
     return {'mib': path, 'objects': objs}
 
 
-def parse_mib_to_json(mib_path):
-    if file is None:
-        return simple_parse_mib_text(mib_path)
+# Attempt to import the richer pysmi-based parser helper if present
+try:
+    from . import mib_parser_pysmi as _mib_parser_pysmi
+except Exception:
+    _mib_parser_pysmi = None
 
-    # Example pipeline using pysmi. Real-world usage configures searchPaths and codegen.
-    # Placeholder: fall back to simple parser to ensure prototype runs without deps.
+
+def parse_mib_to_json(mib_path):
+    """Parse a MIB file to the internal JSON schema.
+
+    If pysmi (and the companion mib_parser_pysmi helper) is available, prefer the
+    pysmi-backed extraction which yields dotted OID strings, precise types, and
+    table/column structure. Otherwise, fall back to the simple text-based parser.
+    """
+    # prefer pysmi-backed parser when available
+    try:
+        if _mib_parser_pysmi is not None and getattr(_mib_parser_pysmi, 'PYSPI_AVAILABLE', False):
+            return _mib_parser_pysmi.parse_with_pysmi(mib_path)
+    except Exception:
+        # if anything goes wrong with pysmi path, continue to fallback
+        pass
+
     return simple_parse_mib_text(mib_path)
 
 
