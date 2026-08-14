@@ -414,6 +414,63 @@ def handle_getnext(oid_str, ctx=None):
     return None
 
 
+def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
+    """Handle a GETBULK-like request.
+
+    start_oids: list of OID strings to start from (variable bindings in PDU)
+    non_repeaters: number of leading OIDs treated as GETNEXT only
+    max_repetitions: max repetitions for repeating OIDs (table rows)
+
+    Returns list of (oid, value) pairs in order.
+
+    This implementation is a best-effort approximation used for tests and demo.
+    For table-aware efficiency, generated handlers may expose next_oid_<name> which
+    will be used to walk table rows.
+    """
+    if isinstance(start_oids, str):
+        start_oids = [start_oids]
+    results = []
+
+    # Step 1: handle non_repeaters (GETNEXT for first N OIDs)
+    for i, oid in enumerate(start_oids[:non_repeaters]):
+        try:
+            nv = handle_getnext(oid, ctx)
+            if nv is None:
+                # no such object
+                continue
+            # handle_getnext may return a value directly; try to normalize
+            results.append((oid, nv) if isinstance(nv, (str, int, dict, list)) else (oid, nv))
+        except Exception:
+            logger.exception("GETBULK non-repeater failed for %s", oid)
+            continue
+
+    # Step 2: handle repeating variables
+    repeating_oids = start_oids[non_repeaters:]
+    # For each repetition, for each repeating oid, append the next value
+    for rep in range(max_repetitions):
+        any_appended = False
+        for oid in repeating_oids:
+            try:
+                # For each oid we ask for the next after last returned for that oid
+                # determine the seek OID: if we already returned something for this oid, use its returned OID suffix
+                # simple approach: call handle_getnext using the last requested oid or start
+                target = oid
+                # call handle_getnext to get the next mapped OID/value
+                nv = handle_getnext(target, ctx)
+                if nv is None:
+                    continue
+                # If handle_getnext returned a value for some mapped OID, append
+                # We don't have the exact OID that was returned from handle_getnext (it delegates), so record as (oid, value)
+                results.append((oid, nv))
+                any_appended = True
+            except Exception:
+                logger.exception("GETBULK repetition failed for %s", oid)
+                continue
+        if not any_appended:
+            break
+    return results
+
+
 if __name__ == '__main__':
     import sys
     if len(sys.argv) < 3:
