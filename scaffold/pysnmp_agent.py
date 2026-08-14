@@ -7,6 +7,13 @@ handle_set functions that can be driven directly.
 """
 import importlib.util
 import os
+import logging
+import time
+
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    # conservative basic config for CLI/debug runs; applications can reconfigure logging
+    logging.basicConfig(level=logging.INFO)
 
 # Simple OID -> handler name mapping. Populate as needed at runtime or edit
 # this mapping for your generated handlers.
@@ -17,7 +24,11 @@ OID_MAP = {
 GENERATED_DIR = os.path.join(os.path.dirname(__file__), 'generated_handlers')
 
 
-def load_handler(name):
+def load_handler(name, retries=2, backoff=0.05):
+    """Dynamically load a generated handler module by name.
+
+    Retries once on transient filesystem/import errors to reduce startup flakiness.
+    """
     modpath = os.path.join(GENERATED_DIR, f'{name}.py')
     if not os.path.exists(modpath):
         raise FileNotFoundError(modpath)
@@ -30,33 +41,58 @@ def load_handler(name):
     # reuse cached module if already loaded so module-level state persists
     if fullname in sys.modules:
         return sys.modules[fullname]
-    spec.loader.exec_module(mod)
-    sys.modules[fullname] = mod
-    return mod
+
+    attempts = 0
+    while True:
+        try:
+            spec.loader.exec_module(mod)
+            sys.modules[fullname] = mod
+            return mod
+        except Exception as e:
+            attempts += 1
+            logger.exception('failed loading handler %s (attempt %d): %s', name, attempts, e)
+            if attempts > retries:
+                raise
+            time.sleep(backoff * attempts)
 
 
 def handle_get(oid_str, ctx=None):
-    """Handle a GET for oid_str and return the Python value from the handler."""
-    name = OID_MAP.get(oid_str)
-    if not name:
-        raise KeyError(f'OID not mapped: {oid_str}')
-    mod = load_handler(name)
-    fn = getattr(mod, f'get_{name}', None)
-    if not fn:
-        raise AttributeError(f'get_{name} not found in handler')
-    return fn(ctx)
+    """Handle a GET for oid_str and return the Python value from the handler.
+
+    Errors from handlers are logged and re-raised so callers can decide an SNMP error code.
+    """
+    try:
+        name = OID_MAP.get(oid_str)
+        if not name:
+            raise KeyError(f'OID not mapped: {oid_str}')
+        mod = load_handler(name)
+        fn = getattr(mod, f'get_{name}', None)
+        if not fn:
+            raise AttributeError(f'get_{name} not found in handler')
+        # handler signature: get_<name>(oid=None, ctx=None)
+        return fn(oid_str, ctx)
+    except Exception:
+        logger.exception('handle_get failed for %s', oid_str)
+        # Reraise to let caller decide SNMP error handling, but keep agent alive
+        raise
 
 
 def handle_set(oid_str, value, ctx=None):
     """Handle a SET for oid_str, passing value to the handler."""
-    name = OID_MAP.get(oid_str)
-    if not name:
-        raise KeyError(f'OID not mapped: {oid_str}')
-    mod = load_handler(name)
-    fn = getattr(mod, f'set_{name}', None)
-    if not fn:
-        raise AttributeError(f'set_{name} not found in handler')
-    return fn(ctx, value)
+    try:
+        name = OID_MAP.get(oid_str)
+        if not name:
+            raise KeyError(f'OID not mapped: {oid_str}')
+        mod = load_handler(name)
+        fn = getattr(mod, f'set_{name}', None)
+        if not fn:
+            raise AttributeError(f'set_{name} not found in handler')
+        # handler signature: set_<name>(oid, value, ctx=None)
+        return fn(oid_str, value, ctx)
+    except Exception:
+        logger.exception('handle_set failed for %s with value %r', oid_str, value)
+        # Reraise so caller can convert to an appropriate SNMP error response
+        raise
 
 
 if __name__ == '__main__':
