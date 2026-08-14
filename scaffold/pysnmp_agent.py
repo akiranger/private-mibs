@@ -2,12 +2,13 @@
 
 Provides a thin layer to map OIDs to generated handler modules and call
 get_<name>/set_<name> functions. When pysnmp is available this module can be
-integrated into a live SNMP responder; for testing it exposes handle_get and
-handle_set functions that can be driven directly.
+integrated into a live SNMP responder; for testing it exposes handle_get,
+handle_set and handle_getnext functions that can be driven directly.
 """
 import importlib.util
 import os
 import logging
+import time
 
 # Simple OID -> handler name mapping. Populate as needed at runtime or edit
 # this mapping for your generated handlers.
@@ -15,41 +16,51 @@ OID_MAP = {
     # '1.3.6.1.4.1.example.1.1': 'myScalar',
 }
 
+# Simple ACL map: provide per-OID or per-handler dicts like {'read': True, 'write': True}
+# Replace with external policy storage (file/DB/service) in production.
+ACL_MAP = {
+    # '1.3.6.1.4.1.example.1.1': {'read': True, 'write': True},
+    # 'myScalar': {'read': ['public'], 'write': ['admin']},
+}
+
 GENERATED_DIR = os.path.join(os.path.dirname(__file__), 'generated_handlers')
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-# Simple ACL mapping: handler name -> allowed operations ("get","set") and allowed principals
-# In real deployments, integrate with SNMPv3 user credentials and engineID; this is a placeholder.
-ACL_MAP = {
-    # 'myScalar': {'get': ['public'], 'set': ['admin']},
-}
 
-
-def _check_access(handler_name, op, ctx):
-    """Check whether ctx indicates permission to perform op on handler_name.
-
-    ctx is expected to be a dict-like with keys like 'principal' (e.g., SNMPv3 user).
-    This function is a conservative gate: if ACL_MAP has an entry for the handler,
-    only listed principals are allowed. If no ACL entry, allow read but deny write by default.
-    """
+def _check_acl(oid_or_handler, op, ctx):
+    """Check ACL_MAP for either OID string or handler name. Conservative default: allow reads, deny writes."""
+    entry = ACL_MAP.get(oid_or_handler)
+    if entry is None:
+        # try handler-name style
+        entry = ACL_MAP.get(oid_or_handler)
+    # if no explicit entry, default allow GET only
+    if not entry:
+        return op == 'get'
+    # entry can be boolean flags or lists; normalize
+    if isinstance(entry.get('read', entry), bool) or isinstance(entry.get('write', entry), bool):
+        if op == 'get':
+            return bool(entry.get('read', True))
+        else:
+            return bool(entry.get('write', False))
+    # or lists of principals
     principal = None
     if ctx and isinstance(ctx, dict):
         principal = ctx.get('principal') or ctx.get('user')
-    perms = ACL_MAP.get(handler_name)
-    if not perms:
-        # default: allow GETs, disallow SETs unless explicitly permitted
-        return op == 'get'
-    allowed = perms.get(op, [])
-    if not allowed:
-        return False
-    if principal is None:
-        return False
-    return principal in allowed
+    allowed = entry.get('read' if op == 'get' else 'write', [])
+    if isinstance(allowed, list):
+        if principal is None:
+            return False
+        return principal in allowed
+    return False
 
 
-def load_handler(name):
+def load_handler(name, retries=2, backoff=0.05):
+    """Dynamically load a generated handler module by name.
+
+    Retries on transient filesystem/import errors to reduce startup flakiness.
+    """
     modpath = os.path.join(GENERATED_DIR, f'{name}.py')
     if not os.path.exists(modpath):
         raise FileNotFoundError(modpath)
@@ -62,9 +73,37 @@ def load_handler(name):
     # reuse cached module if already loaded so module-level state persists
     if fullname in sys.modules:
         return sys.modules[fullname]
-    spec.loader.exec_module(mod)
-    sys.modules[fullname] = mod
-    return mod
+
+    attempts = 0
+    while True:
+        try:
+            spec.loader.exec_module(mod)
+            sys.modules[fullname] = mod
+            return mod
+        except Exception as e:
+            attempts += 1
+            logger.exception('failed loading handler %s (attempt %d): %s', name, attempts, e)
+            if attempts > retries:
+                raise
+            time.sleep(backoff * attempts)
+
+
+def _call_flexible(fn, *args):
+    """Call fn trying multiple signatures for backwards compatibility.
+
+    Tries: fn(*args), fn(args[1:]) etc. Useful when generated handlers vary.
+    """
+    try:
+        return fn(*args)
+    except TypeError:
+        try:
+            # drop first arg
+            return fn(*args[1:])
+        except TypeError:
+            try:
+                return fn()
+            except TypeError:
+                raise
 
 
 def handle_get(oid_str, ctx=None):
@@ -82,12 +121,13 @@ def handle_get(oid_str, ctx=None):
     if not fn:
         logger.error("Handler '%s' missing get_%s", name, name)
         raise AttributeError(f'get_{name} not found in handler')
-    # ACL check
-    if not _check_access(name, 'get', ctx):
+    # ACL check using both OID and handler name
+    if not (_check_acl(oid_str, 'get', ctx) and _check_acl(name, 'get', ctx)):
         logger.warning("Access denied for principal %s on GET %s", ctx.get('principal') if ctx else None, oid_str)
         raise PermissionError('access denied')
     try:
-        return fn(ctx)
+        # try flexible call (oid, ctx) then (ctx) then ()
+        return _call_flexible(fn, oid_str, ctx)
     except Exception:
         logger.exception("Handler '%s' get failed for OID %s", name, oid_str)
         raise
@@ -99,6 +139,10 @@ def handle_set(oid_str, value, ctx=None):
     if not name:
         logger.warning("SET for unmapped OID: %s", oid_str)
         raise KeyError(f'OID not mapped: {oid_str}')
+    # ACL check using both OID and handler name
+    if not (_check_acl(oid_str, 'set', ctx) and _check_acl(name, 'set', ctx)):
+        logger.warning("Access denied for principal %s on SET %s", ctx.get('principal') if ctx else None, oid_str)
+        raise PermissionError('access denied')
     try:
         mod = load_handler(name)
     except Exception as e:
@@ -108,12 +152,8 @@ def handle_set(oid_str, value, ctx=None):
     if not fn:
         logger.error("Handler '%s' missing set_%s", name, name)
         raise AttributeError(f'set_{name} not found in handler')
-    # ACL check
-    if not _check_access(name, 'set', ctx):
-        logger.warning("Access denied for principal %s on SET %s", ctx.get('principal') if ctx else None, oid_str)
-        raise PermissionError('access denied')
     try:
-        return fn(ctx, value)
+        return _call_flexible(fn, oid_str, value, ctx)
     except Exception:
         logger.exception("Handler '%s' set failed for OID %s with value %r", name, oid_str, value)
         raise
