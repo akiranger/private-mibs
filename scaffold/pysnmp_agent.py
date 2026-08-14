@@ -26,7 +26,88 @@ ACL_MAP = {
 GENERATED_DIR = os.path.join(os.path.dirname(__file__), 'generated_handlers')
 
 logger = logging.getLogger(__name__)
-logger.addHandler(logging.NullHandler())
+if not logger.handlers:
+    # conservative basic config for CLI/debug runs; applications can reconfigure logging
+    logging.basicConfig(level=logging.INFO)
+
+
+# SNMPv3 USM user store (in-memory). For production, use secure secret storage.
+_USM_USERS = {}
+
+
+def register_usm_user(username, auth_protocol=None, auth_key=None, priv_protocol=None, priv_key=None):
+    """Register an SNMPv3 USM user in-memory.
+
+    NOTE: This stores secrets in process memory only. Production deployments must
+    use a secure secrets manager and restrict filesystem access if persisted.
+
+    auth_protocol / priv_protocol should be strings like 'MD5','SHA','AES'.
+    """
+    if not username:
+        raise ValueError('username required')
+    _USM_USERS[username] = {
+        'auth_protocol': auth_protocol,
+        'auth_key': auth_key,
+        'priv_protocol': priv_protocol,
+        'priv_key': priv_key,
+    }
+
+
+def load_usm_users_from_file(path):
+    """Load USM users from a JSON file containing a list of user objects.
+
+    File format example:
+      [
+        {"username": "admin", "auth_protocol":"SHA", "auth_key":"...", "priv_protocol":"AES", "priv_key":"..."}
+      ]
+
+    THIS IS CONVENIENCE FOR DEV/TEST ONLY. Use secret stores for production.
+    """
+    import json
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    for u in data:
+        register_usm_user(u.get('username'), u.get('auth_protocol'), u.get('auth_key'), u.get('priv_protocol'), u.get('priv_key'))
+
+
+def register_usm_with_pysnmp(snmpEngine):
+    """Register USM users stored in-memory with a pysnmp snmpEngine.
+
+    If pysnmp is not installed, raises ImportError. Uses pysnmp.entity.config.addV3User
+    to register each user. Returns list of usernames successfully registered.
+    """
+    try:
+        from pysnmp.entity import config
+    except Exception:
+        raise ImportError('pysnmp is not available')
+
+    proto_map = {
+        None: config.usmNoAuthProtocol if hasattr(config, 'usmNoAuthProtocol') else None,
+        'MD5': getattr(config, 'usmHMACMD5AuthProtocol', None),
+        'SHA': getattr(config, 'usmHMACSHAAuthProtocol', None),
+        'SHA224': getattr(config, 'usmHMAC128SHA224AuthProtocol', None),
+    }
+    priv_map = {
+        None: getattr(config, 'usmNoPrivProtocol', None) if hasattr(config, 'usmNoPrivProtocol') else None,
+        'DES': getattr(config, 'usmDESPrivProtocol', None),
+        'AES': getattr(config, 'usmAesCfb128Protocol', None) or getattr(config, 'usmAesCfb128Protocol', None),
+    }
+
+    registered = []
+    for username, props in _USM_USERS.items():
+        auth_proto = proto_map.get(props.get('auth_protocol'))
+        priv_proto = priv_map.get(props.get('priv_protocol'))
+        auth_key = props.get('auth_key')
+        priv_key = props.get('priv_key')
+        try:
+            # addV3User(snmpEngine, userName, authProtocol, authKey, privProtocol, privKey)
+            config.addV3User(snmpEngine, username,
+                             authProtocol=auth_proto, authKey=auth_key,
+                             privProtocol=priv_proto, privKey=priv_key)
+            registered.append(username)
+        except Exception:
+            logger.exception('failed to register USM user %s', username)
+    return registered
 
 
 def _check_acl(oid_or_handler, op, ctx):
@@ -54,6 +135,7 @@ def _check_acl(oid_or_handler, op, ctx):
             return False
         return principal in allowed
     return False
+
 
 
 def load_handler(name, retries=2, backoff=0.05):
@@ -94,6 +176,26 @@ def _call_flexible(fn, *args):
     Tries: fn(*args), fn(args[1:]) etc. Useful when generated handlers vary.
     """
     try:
+<<<<<<< HEAD
+        name = OID_MAP.get(oid_str)
+        if not name:
+            raise KeyError(f'OID not mapped: {oid_str}')
+        mod = load_handler(name)
+        fn = getattr(mod, f'get_{name}', None)
+        if not fn:
+            raise AttributeError(f'get_{name} not found in handler')
+        # Call handler with flexible signature support for legacy handlers.
+        try:
+            return fn(oid_str, ctx)
+        except TypeError:
+            try:
+                return fn(ctx)
+            except TypeError:
+                return fn()
+    except Exception:
+        logger.exception('handle_get failed for %s', oid_str)
+        # Reraise to let caller decide SNMP error handling, but keep agent alive
+=======
         return fn(*args)
     except TypeError:
         try:
@@ -130,6 +232,7 @@ def handle_get(oid_str, ctx=None):
         return _call_flexible(fn, oid_str, ctx)
     except Exception:
         logger.exception("Handler '%s' get failed for OID %s", name, oid_str)
+>>>>>>> origin/main
         raise
 
 
