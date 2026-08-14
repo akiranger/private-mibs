@@ -149,6 +149,17 @@ def set_{name}(oid, value, ctx=None):
         return True
     else:
         # tables: expect dict or simple value
+        # Support batch updates: list of row dicts -> atomic bulk upsert
+        if isinstance(value, list):
+            try:
+                # validate rows
+                validated = []
+                for r in value:
+                    validated.append(_validate_row(r))
+                db.bulk_upsert('{name}', validated, unique_cols={unique_cols})
+                return True
+            except Exception:
+                return False
         if isinstance(value, dict):
             try:
                 value = _validate_row(value)
