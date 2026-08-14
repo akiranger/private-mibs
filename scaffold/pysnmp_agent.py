@@ -434,7 +434,9 @@ def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
     def _find_next_candidate_after(oid_tuple):
         for candidate in _sorted_oids():
             try:
-                if _oid_to_tuple(candidate) > oid_tuple:
+                cand_t = _oid_to_tuple(candidate)
+                # allow candidate equal to the requested start (so table first-row can be returned)
+                if cand_t >= oid_tuple:
                     return candidate
             except Exception:
                 continue
