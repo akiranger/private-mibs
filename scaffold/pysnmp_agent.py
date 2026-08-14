@@ -300,6 +300,16 @@ def handle_get(oid_str, ctx=None):
     """Handle a GET for oid_str and return the Python value from the handler."""
     name = OID_MAP.get(oid_str)
     if not name:
+        # attempt to resolve by longest matching mapped prefix (allow concrete OID suffixes)
+        for candidate in reversed(sorted(OID_MAP.keys(), key=lambda k: len(k))):
+            try:
+                if oid_str == candidate or oid_str.startswith(candidate + '.'):
+                    name = OID_MAP.get(candidate)
+                    if name:
+                        break
+            except Exception:
+                continue
+    if not name:
         logger.warning("GET for unmapped OID: %s", oid_str)
         raise KeyError(f'OID not mapped: {oid_str}')
     try:
