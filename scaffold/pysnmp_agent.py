@@ -75,12 +75,18 @@ def handle_get(oid_str, ctx=None):
         fn = getattr(mod, f'get_{name}', None)
         if not fn:
             raise AttributeError(f'get_{name} not found in handler')
-        # handler signature: get_<name>(oid=None, ctx=None)
-        return fn(oid_str, ctx)
-    except Exception:
-        logger.exception('handle_get failed for %s', oid_str)
-        # Reraise to let caller decide SNMP error handling, but keep agent alive
-        raise
+            # Call handler with flexible signature support for legacy handlers.
+            try:
+                return fn(oid_str, ctx)
+            except TypeError:
+                try:
+                    return fn(ctx)
+                except TypeError:
+                    return fn()
+        except Exception:
+            logger.exception('handle_get failed for %s', oid_str)
+            # Reraise to let caller decide SNMP error handling, but keep agent alive
+            raise
 
 
 def handle_set(oid_str, value, ctx=None):
@@ -97,8 +103,14 @@ def handle_set(oid_str, value, ctx=None):
         fn = getattr(mod, f'set_{name}', None)
         if not fn:
             raise AttributeError(f'set_{name} not found in handler')
-        # handler signature: set_<name>(oid, value, ctx=None)
-        return fn(oid_str, value, ctx)
+        # Call handler with flexible signature support
+        try:
+            return fn(oid_str, value, ctx)
+        except TypeError:
+            try:
+                return fn(ctx, value)
+            except TypeError:
+                return fn(value)
     except Exception:
         logger.exception('handle_set failed for %s with value %r', oid_str, value)
         # Reraise so caller can convert to an appropriate SNMP error response
