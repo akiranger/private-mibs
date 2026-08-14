@@ -421,50 +421,132 @@ def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
     non_repeaters: number of leading OIDs treated as GETNEXT only
     max_repetitions: max repetitions for repeating OIDs (table rows)
 
-    Returns list of (oid, value) pairs in order.
+    Returns list of (resolved_oid, value) pairs in order.
 
-    This implementation is a best-effort approximation used for tests and demo.
-    For table-aware efficiency, generated handlers may expose next_oid_<name> which
-    will be used to walk table rows.
+    This implementation walks mapped OIDs and, when a handler exposes
+    next_oid_<name>, uses it to iterate table rows and construct concrete OIDs.
     """
     if isinstance(start_oids, str):
         start_oids = [start_oids]
     results = []
 
-    # Step 1: handle non_repeaters (GETNEXT for first N OIDs)
-    for i, oid in enumerate(start_oids[:non_repeaters]):
-        try:
-            nv = handle_getnext(oid, ctx)
-            if nv is None:
-                # no such object
+    # Helper: find next mapped candidate OID string greater than a given OID tuple
+    def _find_next_candidate_after(oid_tuple):
+        for candidate in _sorted_oids():
+            try:
+                if _oid_to_tuple(candidate) > oid_tuple:
+                    return candidate
+            except Exception:
                 continue
-            # handle_getnext may return a value directly; try to normalize
-            results.append((oid, nv) if isinstance(nv, (str, int, dict, list)) else (oid, nv))
+        return None
+
+    # Step 1: non-repeaters -> simple GETNEXT per OID
+    for oid in start_oids[:non_repeaters]:
+        try:
+            # find next candidate and resolve a concrete OID/value
+            next_cand = _find_next_candidate_after(_oid_to_tuple(oid))
+            if not next_cand:
+                continue
+            name = OID_MAP.get(next_cand)
+            # attempt table-aware resolution
+            try:
+                mod = load_handler(name)
+                next_fn = getattr(mod, f'next_oid_{name}', None)
+                if callable(next_fn):
+                    # first row
+                    try:
+                        idx = next_fn(None)
+                    except Exception:
+                        idx = None
+                    if idx is not None:
+                        resolved_oid = f"{next_cand}.{idx}" if not next_cand.endswith('.') else f"{next_cand}{idx}"
+                        val = handle_get(resolved_oid, ctx)
+                        results.append((resolved_oid, val))
+                        continue
+                # fallback: return candidate's scalar value
+                val = handle_get(next_cand, ctx)
+                results.append((next_cand, val))
+            except Exception:
+                logger.exception("GETBULK nonrepeater failed to resolve %s", next_cand)
+                continue
         except Exception:
-            logger.exception("GETBULK non-repeater failed for %s", oid)
+            logger.exception("GETBULK nonrepeater unexpected error for %s", oid)
             continue
 
-    # Step 2: handle repeating variables
+    # Step 2: repeating vars -> iterate up to max_repetitions rows per repeating OID
     repeating_oids = start_oids[non_repeaters:]
-    # For each repetition, for each repeating oid, append the next value
-    for rep in range(max_repetitions):
+    # maintain per-oid seek positions as tuples (current_oid_tuple) representing last returned concrete OID
+    seek_positions = {oid: _oid_to_tuple(oid) for oid in repeating_oids}
+
+    for _rep in range(max_repetitions):
         any_appended = False
         for oid in repeating_oids:
             try:
-                # For each oid we ask for the next after last returned for that oid
-                # determine the seek OID: if we already returned something for this oid, use its returned OID suffix
-                # simple approach: call handle_getnext using the last requested oid or start
-                target = oid
-                # call handle_getnext to get the next mapped OID/value
-                nv = handle_getnext(target, ctx)
-                if nv is None:
+                seek = seek_positions.get(oid, _oid_to_tuple(oid))
+                candidate = _find_next_candidate_after(seek)
+                if not candidate:
                     continue
-                # If handle_getnext returned a value for some mapped OID, append
-                # We don't have the exact OID that was returned from handle_getnext (it delegates), so record as (oid, value)
-                results.append((oid, nv))
-                any_appended = True
+                name = OID_MAP.get(candidate)
+                try:
+                    mod = load_handler(name)
+                except Exception:
+                    logger.exception('failed to load handler for %s', name)
+                    # fallback: attempt to GET the candidate and advance seek to candidate tuple
+                    try:
+                        val = handle_get(candidate, ctx)
+                        results.append((candidate, val))
+                        seek_positions[oid] = _oid_to_tuple(candidate)
+                        any_appended = True
+                    except Exception:
+                        continue
+                    continue
+
+                next_fn = getattr(mod, f'next_oid_{name}', None)
+                if callable(next_fn):
+                    # determine current index from seek relative to candidate
+                    # if seek is exactly candidate (no suffix), pass None to get first row
+                    seek_str = '.'.join(str(i) for i in seek)
+                    # if seek starts with candidate parts, try to extract suffix
+                    try:
+                        cand_parts = _oid_to_tuple(candidate)
+                        if seek[:len(cand_parts)] == cand_parts and len(seek) > len(cand_parts):
+                            # suffix exists
+                            current_idx = seek[len(cand_parts):][-1]
+                        else:
+                            current_idx = None
+                    except Exception:
+                        current_idx = None
+                    try:
+                        next_index = next_fn(current_idx)
+                    except Exception:
+                        logger.exception('next_oid helper failed for %s', name)
+                        next_index = None
+                    if next_index is None:
+                        # no more rows in this table; advance seek to candidate to find next mapped OID
+                        seek_positions[oid] = _oid_to_tuple(candidate)
+                        continue
+                    resolved_oid = f"{candidate}.{next_index}" if not candidate.endswith('.') else f"{candidate}{next_index}"
+                    try:
+                        val = handle_get(resolved_oid, ctx)
+                        results.append((resolved_oid, val))
+                        # update seek to the returned concrete OID tuple
+                        seek_positions[oid] = _oid_to_tuple(resolved_oid)
+                        any_appended = True
+                    except Exception:
+                        logger.exception('failed to GET resolved oid %s', resolved_oid)
+                        continue
+                else:
+                    # scalar-like: return candidate's value once and advance seek
+                    try:
+                        val = handle_get(candidate, ctx)
+                        results.append((candidate, val))
+                        seek_positions[oid] = _oid_to_tuple(candidate)
+                        any_appended = True
+                    except Exception:
+                        logger.exception('failed to GET candidate %s', candidate)
+                        continue
             except Exception:
-                logger.exception("GETBULK repetition failed for %s", oid)
+                logger.exception("GETBULK repetition unexpected error for %s", oid)
                 continue
         if not any_appended:
             break
