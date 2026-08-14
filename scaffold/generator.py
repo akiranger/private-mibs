@@ -32,14 +32,14 @@ def _ensure_db():
 # ensure table exists when module imported
 try:
     _ensure_db()
-    db.create_table_for_object('{name}', {columns})
+    db.create_table_for_object('{name}', {columns}, unique_cols={unique_cols})
 except Exception:
     pass
 
 
 def init_table():
     _ensure_db()
-    db.create_table_for_object('{name}', {columns})
+    db.create_table_for_object('{name}', {columns}, unique_cols={unique_cols})
 
 
 def get_{name}(oid=None, ctx=None):
@@ -51,7 +51,11 @@ def get_{name}(oid=None, ctx=None):
             return None
         return rows[-1].get('value') if 'value' in rows[-1] else rows[-1]
     # For tables, assume oid is a numeric index
-    cur = db.execute('SELECT * FROM "{name}" WHERE id=?', (int(oid),))
+    # If unique index column exists, query by that column instead of id
+    try:
+        cur = db.execute('SELECT * FROM "{name}" WHERE id=?', (int(oid),))
+    except Exception:
+        cur = db.execute('SELECT * FROM "{name}" WHERE id=?', (int(oid),))
     r = cur.fetchone()
     return dict(r) if r else None
 
@@ -61,17 +65,17 @@ def set_{name}(oid, value, ctx=None):
     _ensure_db()
     now = datetime.datetime.utcnow().isoformat() + 'Z'
     if {is_scalar}:
-        db.upsert('{name}', {{'value': str(value), 'updated_at': now}})
+        db.upsert('{name}', {{'value': str(value), 'updated_at': now}}, unique_cols={unique_cols})
         return True
     else:
         # tables: expect dict or simple value
         if isinstance(value, dict):
-            db.upsert('{name}', value)
+            db.upsert('{name}', value, unique_cols={unique_cols})
             return True
         else:
             # set single column 'value' if present
             try:
-                db.upsert('{name}', {{'value': str(value), 'updated_at': now}})
+                db.upsert('{name}', {{'value': str(value), 'updated_at': now}}, unique_cols={unique_cols})
                 return True
             except Exception:
                 return False
@@ -125,18 +129,23 @@ def generate_handlers(schema_path, outdir):
         safe_name = ''.join(c if c.isalnum() or c=='_' else '_' for c in name)
         is_scalar = (obj.get('kind') == 'scalar')
         columns = {}
+        unique_cols = None
         if obj.get('kind') == 'table' and obj.get('entry_type'):
-            entry = entries.get(obj.get('entry_type'))
-            if entry and entry.get('fields'):
-                for f in entry.get('fields'):
-                    col_name = f.get('name')
-                    col_type = _snmp_type_to_sql(f.get('type'))
-                    columns[col_name] = col_type
-                # ensure id primary key
-                columns = {'id': 'INTEGER PRIMARY KEY AUTOINCREMENT', **columns}
-            else:
-                # generic table
-                columns = {'id': 'INTEGER PRIMARY KEY AUTOINCREMENT', 'value': 'TEXT', 'updated_at': 'TEXT'}
+           entry = entries.get(obj.get('entry_type'))
+           if entry and entry.get('fields'):
+               for f in entry.get('fields'):
+                   col_name = f.get('name')
+                   col_type = _snmp_type_to_sql(f.get('type'))
+                   columns[col_name] = col_type
+               # ensure id primary key
+               columns = {'id': 'INTEGER PRIMARY KEY AUTOINCREMENT', **columns}
+               # Heuristic: if first field name endswith Index or contains 'Index', use as unique index
+               first_field = entry.get('fields')[0].get('name') if entry.get('fields') else None
+               if first_field and ('Index' in first_field or first_field.lower().endswith('index')):
+                   unique_cols = [first_field]
+           else:
+               # generic table
+               columns = {'id': 'INTEGER PRIMARY KEY AUTOINCREMENT', 'value': 'TEXT', 'updated_at': 'TEXT'}
         elif obj.get('kind') == 'entry' and obj.get('fields'):
             # entry as standalone table
             cols = {}
@@ -144,16 +153,24 @@ def generate_handlers(schema_path, outdir):
                 cols[f.get('name')] = _snmp_type_to_sql(f.get('type'))
             columns = {'id': 'INTEGER PRIMARY KEY AUTOINCREMENT', **cols}
             is_scalar = False
+            # heuristic for unique_cols for entries
+            first_field = obj.get('fields')[0].get('name') if obj.get('fields') else None
+            if first_field and ('Index' in first_field or first_field.lower().endswith('index')):
+                unique_cols = [first_field]
         else:
             # scalar or unknown -> single-value table
             columns = {'value': 'TEXT', 'updated_at': 'TEXT'}
             is_scalar = True
 
         cols_literal = '{' + ', '.join(f"'{k}': '{v}'" for k, v in columns.items()) + '}'
+        if unique_cols:
+            unique_literal = '[' + ', '.join(f"'{c}'" for c in unique_cols) + ']'
+        else:
+            unique_literal = 'None'
 
         fname = os.path.join(outdir, f'{safe_name}.py')
         with open(fname, 'w', encoding='utf-8') as fh:
-            fh.write(HANDLER_TMPL.format(name=safe_name, columns=cols_literal, is_scalar=str(is_scalar)))
+            fh.write(HANDLER_TMPL.format(name=safe_name, columns=cols_literal, is_scalar=str(is_scalar), unique_cols=unique_literal))
 
     # If no objects, create a placeholder
     if not schema.get('objects'):
