@@ -66,6 +66,46 @@ def load_usm_users_from_file(path):
         register_usm_user(u.get('username'), u.get('auth_protocol'), u.get('auth_key'), u.get('priv_protocol'), u.get('priv_key'))
 
 
+def register_usm_with_pysnmp(snmpEngine):
+    """Register USM users stored in-memory with a pysnmp snmpEngine.
+
+    If pysnmp is not installed, raises ImportError. Uses pysnmp.entity.config.addV3User
+    to register each user. Returns list of usernames successfully registered.
+    """
+    try:
+        from pysnmp.entity import config
+    except Exception:
+        raise ImportError('pysnmp is not available')
+
+    proto_map = {
+        None: config.usmNoAuthProtocol if hasattr(config, 'usmNoAuthProtocol') else None,
+        'MD5': getattr(config, 'usmHMACMD5AuthProtocol', None),
+        'SHA': getattr(config, 'usmHMACSHAAuthProtocol', None),
+        'SHA224': getattr(config, 'usmHMAC128SHA224AuthProtocol', None),
+    }
+    priv_map = {
+        None: getattr(config, 'usmNoPrivProtocol', None) if hasattr(config, 'usmNoPrivProtocol') else None,
+        'DES': getattr(config, 'usmDESPrivProtocol', None),
+        'AES': getattr(config, 'usmAesCfb128Protocol', None) or getattr(config, 'usmAesCfb128Protocol', None),
+    }
+
+    registered = []
+    for username, props in _USM_USERS.items():
+        auth_proto = proto_map.get(props.get('auth_protocol'))
+        priv_proto = priv_map.get(props.get('priv_protocol'))
+        auth_key = props.get('auth_key')
+        priv_key = props.get('priv_key')
+        try:
+            # addV3User(snmpEngine, userName, authProtocol, authKey, privProtocol, privKey)
+            config.addV3User(snmpEngine, username,
+                             authProtocol=auth_proto, authKey=auth_key,
+                             privProtocol=priv_proto, privKey=priv_key)
+            registered.append(username)
+        except Exception:
+            logger.exception('failed to register USM user %s', username)
+    return registered
+
+
 
 def load_handler(name, retries=2, backoff=0.05):
     """Dynamically load a generated handler module by name.
