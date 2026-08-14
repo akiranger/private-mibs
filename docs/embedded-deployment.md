@@ -36,7 +36,7 @@ Benchmarks and minimum requirements
 
 Examples
 
-- The repository includes run_smoke_getbulk.py and scripts/run_benchmarks.py (proposed) that can be adapted to target platforms. Use them to gather baseline numbers during CI or on-device tests.
+- The repository includes scripts/run_smoke_getbulk.py, scripts/run_unit_gen_tests.py, and scripts/run_embedded_bench.py that can be adapted to target platforms. Use them to gather baseline numbers during CI or on-device tests.
 
 Operational notes
 
