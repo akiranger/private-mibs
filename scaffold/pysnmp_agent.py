@@ -7,6 +7,7 @@ handle_set functions that can be driven directly.
 """
 import importlib.util
 import os
+import logging
 
 # Simple OID -> handler name mapping. Populate as needed at runtime or edit
 # this mapping for your generated handlers.
@@ -15,6 +16,9 @@ OID_MAP = {
 }
 
 GENERATED_DIR = os.path.join(os.path.dirname(__file__), 'generated_handlers')
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def load_handler(name):
@@ -39,24 +43,44 @@ def handle_get(oid_str, ctx=None):
     """Handle a GET for oid_str and return the Python value from the handler."""
     name = OID_MAP.get(oid_str)
     if not name:
+        logger.warning("GET for unmapped OID: %s", oid_str)
         raise KeyError(f'OID not mapped: {oid_str}')
-    mod = load_handler(name)
+    try:
+        mod = load_handler(name)
+    except Exception as e:
+        logger.exception("Failed to load handler '%s' for OID %s: %s", name, oid_str, e)
+        raise
     fn = getattr(mod, f'get_{name}', None)
     if not fn:
+        logger.error("Handler '%s' missing get_%s", name, name)
         raise AttributeError(f'get_{name} not found in handler')
-    return fn(ctx)
+    try:
+        return fn(ctx)
+    except Exception:
+        logger.exception("Handler '%s' get failed for OID %s", name, oid_str)
+        raise
 
 
 def handle_set(oid_str, value, ctx=None):
     """Handle a SET for oid_str, passing value to the handler."""
     name = OID_MAP.get(oid_str)
     if not name:
+        logger.warning("SET for unmapped OID: %s", oid_str)
         raise KeyError(f'OID not mapped: {oid_str}')
-    mod = load_handler(name)
+    try:
+        mod = load_handler(name)
+    except Exception as e:
+        logger.exception("Failed to load handler '%s' for OID %s: %s", name, oid_str, e)
+        raise
     fn = getattr(mod, f'set_{name}', None)
     if not fn:
+        logger.error("Handler '%s' missing set_%s", name, name)
         raise AttributeError(f'set_{name} not found in handler')
-    return fn(ctx, value)
+    try:
+        return fn(ctx, value)
+    except Exception:
+        logger.exception("Handler '%s' set failed for OID %s with value %r", name, oid_str, value)
+        raise
 
 
 if __name__ == '__main__':
