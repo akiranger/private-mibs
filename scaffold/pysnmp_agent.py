@@ -187,17 +187,17 @@ def _call_flexible(fn, *args):
         return fn(*args)
     except TypeError:
         pass
-    # 2: drop first (common for get handlers: (oid, ctx) -> expect (ctx,))
-    try:
-        return fn(*args[1:])
-    except TypeError:
-        pass
-    # 3: interpret (oid, value, ctx) -> (ctx, value)
+    # 2: interpret (oid, value, ctx) -> (ctx, value) - prefer this to avoid accidental overwrite
     if len(args) >= 3:
         try:
             return fn(args[2], args[1])
         except TypeError:
             pass
+    # 3: drop first (common for get handlers: (oid, ctx) -> expect (ctx,))
+    try:
+        return fn(*args[1:])
+    except TypeError:
+        pass
     # 4: value-only
     if len(args) >= 2:
         try:
