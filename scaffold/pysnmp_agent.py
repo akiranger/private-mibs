@@ -384,8 +384,29 @@ def handle_getnext(oid_str, ctx=None):
         try:
             if _oid_to_tuple(candidate) > requested:
                 logger.debug("GETNEXT maps %s -> %s", oid_str, candidate)
-                # delegate to existing GET handler
-                return handle_get(candidate, ctx)
+                # try table-aware next_oid helper if available
+                name = OID_MAP.get(candidate)
+                try:
+                    mod = load_handler(name)
+                    next_fn = getattr(mod, f'next_oid_{name}', None)
+                    if callable(next_fn):
+                        try:
+                            next_idx = next_fn(oid_str)
+                            if next_idx is not None:
+                                # construct OID for this candidate with index suffix
+                                next_oid = f"{candidate}.{next_idx}" if not candidate.endswith('.') else f"{candidate}{next_idx}"
+                                return handle_get(next_oid, ctx)
+                        except Exception:
+                            logger.exception("next_oid helper for %s failed", name)
+                    # fallback: delegate to existing GET handler for candidate
+                    return handle_get(candidate, ctx)
+                except Exception:
+                    logger.exception("Failed to load handler for candidate %s", candidate)
+                    # fallback to returning candidate GET if possible
+                    try:
+                        return handle_get(candidate, ctx)
+                    except Exception:
+                        continue
         except Exception:
             logger.exception("Error comparing OIDs %s and %s", candidate, oid_str)
             continue
