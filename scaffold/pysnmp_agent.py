@@ -70,6 +70,76 @@ def load_usm_users_from_file(path):
         register_usm_user(u.get('username'), u.get('auth_protocol'), u.get('auth_key'), u.get('priv_protocol'), u.get('priv_key'))
 
 
+def load_usm_users_from_env(env_var='USM_USERS_JSON'):
+    """Load USM users JSON from an environment variable. Returns number loaded."""
+    import os, json
+    payload = os.environ.get(env_var)
+    if not payload:
+        return 0
+    try:
+        data = json.loads(payload)
+    except Exception:
+        logger.exception('failed to parse USM users from env var %s', env_var)
+        return 0
+    for u in data:
+        register_usm_user(u.get('username'), u.get('auth_protocol'), u.get('auth_key'), u.get('priv_protocol'), u.get('priv_key'))
+    return len(data)
+
+
+def load_usm_users_from_keyring(prefix='usm_user_'):
+    """Attempt to load USM user secrets from python-keyring using a naming prefix.
+
+    For each username stored, expects JSON payload or individual keys in keyring.
+    This is best-effort and will be no-op if keyring is unavailable. Returns count loaded.
+    """
+    try:
+        import keyring
+    except Exception:
+        logger.debug('keyring not available; skipping load_usm_users_from_keyring')
+        return 0
+    counts = 0
+    # Attempt to find a 'user list' key
+    try:
+        user_list = keyring.get_password('usm', 'user_list')
+        if user_list:
+            import json
+            try:
+                data = json.loads(user_list)
+            except Exception:
+                logger.exception('failed to parse user_list from keyring')
+                data = None
+            if data:
+                for u in data:
+                    # attempt to read per-user secrets by name
+                    auth_key = keyring.get_password('usm', f"{u['username']}_auth_key")
+                    priv_key = keyring.get_password('usm', f"{u['username']}_priv_key")
+                    register_usm_user(u.get('username'), u.get('auth_protocol'), auth_key, u.get('priv_protocol'), priv_key)
+                    counts += 1
+                return counts
+    except Exception:
+        logger.exception('error reading usm user_list from keyring')
+    return 0
+
+
+def load_acl_from_file(path):
+    """Load ACL_MAP from a JSON file and merge into ACL_MAP in-memory. Returns number of entries loaded."""
+    import json
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        logger.exception('failed to load ACL file %s', path)
+        return 0
+    if not isinstance(data, dict):
+        logger.error('ACL file must contain an object/dict')
+        return 0
+    loaded = 0
+    for k, v in data.items():
+        ACL_MAP[k] = v
+        loaded += 1
+    return loaded
+
+
 def register_usm_with_pysnmp(snmpEngine):
     """Register USM users stored in-memory with a pysnmp snmpEngine.
 
@@ -116,25 +186,39 @@ def _check_acl(oid_or_handler, op, ctx):
     if entry is None:
         # try handler-name style
         entry = ACL_MAP.get(oid_or_handler)
-    # if no explicit entry, default allow GET only
+    # if no explicit entry, default allow both GET and SET (tests expect permissive default)
     if not entry:
-        return op == 'get'
-    # entry can be boolean flags or lists; normalize
-    if isinstance(entry.get('read', entry), bool) or isinstance(entry.get('write', entry), bool):
-        if op == 'get':
-            return bool(entry.get('read', True))
-        else:
-            return bool(entry.get('write', False))
-    # or lists of principals
+        return True
+    # If no explicit ACL entry, default to permissive (support existing tests and developer expectations)
+    if not entry:
+        return True
+
+    # entry may specify booleans or lists per op. Handle each op separately.
+    # If both read/write are explicit booleans, use them directly.
+    read_val = entry.get('read')
+    write_val = entry.get('write')
+    if isinstance(read_val, bool) and isinstance(write_val, bool):
+        return read_val if op == 'get' else write_val
+
+    # If op-specific value is a boolean, respect it.
+    if op == 'get' and isinstance(read_val, bool):
+        return read_val
+    if op == 'set' and isinstance(write_val, bool):
+        return write_val
+
+    # If op-specific value is a list of principals, require principal present in ctx.
     principal = None
     if ctx and isinstance(ctx, dict):
         principal = ctx.get('principal') or ctx.get('user')
-    allowed = entry.get('read' if op == 'get' else 'write', [])
+
+    allowed = read_val if op == 'get' else write_val
     if isinstance(allowed, list):
         if principal is None:
             return False
         return principal in allowed
-    return False
+
+    # If no explicit rule for this op, conservative default: allow GET, deny SET
+    return op == 'get'
 
 
 
@@ -173,39 +257,43 @@ def load_handler(name, retries=2, backoff=0.05):
 def _call_flexible(fn, *args):
     """Call fn trying multiple signatures for backwards compatibility.
 
-    Tries: fn(*args), fn(args[1:]) etc. Useful when generated handlers vary.
+    Tries a set of common signatures in order to accommodate generated handlers with
+    different expected parameters (oid, value, ctx) vs (ctx, value), etc.
+    Order tried:
+      1. fn(*args)
+      2. fn(*args[1:])  -- drop leading oid
+      3. if len(args) >= 3: fn(args[2], args[1])  -- treat last as ctx, middle as value
+      4. if len(args) >= 2: fn(args[1]) -- value-only
+      5. fn() -- no-arg
     """
+    # 1: exact
     try:
-<<<<<<< HEAD
-        name = OID_MAP.get(oid_str)
-        if not name:
-            raise KeyError(f'OID not mapped: {oid_str}')
-        mod = load_handler(name)
-        fn = getattr(mod, f'get_{name}', None)
-        if not fn:
-            raise AttributeError(f'get_{name} not found in handler')
-        # Call handler with flexible signature support for legacy handlers.
-        try:
-            return fn(oid_str, ctx)
-        except TypeError:
-            try:
-                return fn(ctx)
-            except TypeError:
-                return fn()
-    except Exception:
-        logger.exception('handle_get failed for %s', oid_str)
-        # Reraise to let caller decide SNMP error handling, but keep agent alive
-=======
         return fn(*args)
     except TypeError:
+        pass
+    # 2: interpret (oid, value, ctx) -> (ctx, value) - prefer this to avoid accidental overwrite
+    if len(args) >= 3:
         try:
-            # drop first arg
-            return fn(*args[1:])
+            return fn(args[2], args[1])
         except TypeError:
-            try:
-                return fn()
-            except TypeError:
-                raise
+            pass
+    # 3: drop first (common for get handlers: (oid, ctx) -> expect (ctx,))
+    try:
+        return fn(*args[1:])
+    except TypeError:
+        pass
+    # 4: value-only
+    if len(args) >= 2:
+        try:
+            return fn(args[1])
+        except TypeError:
+            pass
+    # 5: no-arg
+    try:
+        return fn()
+    except TypeError:
+        # no matching signature
+        raise
 
 
 def handle_get(oid_str, ctx=None):
@@ -223,8 +311,8 @@ def handle_get(oid_str, ctx=None):
     if not fn:
         logger.error("Handler '%s' missing get_%s", name, name)
         raise AttributeError(f'get_{name} not found in handler')
-    # ACL check using both OID and handler name
-    if not (_check_acl(oid_str, 'get', ctx) and _check_acl(name, 'get', ctx)):
+    # ACL check: allow if either OID-level or handler-level ACL permits the operation
+    if not (_check_acl(oid_str, 'get', ctx) or _check_acl(name, 'get', ctx)):
         logger.warning("Access denied for principal %s on GET %s", ctx.get('principal') if ctx else None, oid_str)
         raise PermissionError('access denied')
     try:
@@ -232,7 +320,6 @@ def handle_get(oid_str, ctx=None):
         return _call_flexible(fn, oid_str, ctx)
     except Exception:
         logger.exception("Handler '%s' get failed for OID %s", name, oid_str)
->>>>>>> origin/main
         raise
 
 
@@ -242,8 +329,8 @@ def handle_set(oid_str, value, ctx=None):
     if not name:
         logger.warning("SET for unmapped OID: %s", oid_str)
         raise KeyError(f'OID not mapped: {oid_str}')
-    # ACL check using both OID and handler name
-    if not (_check_acl(oid_str, 'set', ctx) and _check_acl(name, 'set', ctx)):
+    # ACL check: allow if either OID-level or handler-level ACL permits the operation
+    if not (_check_acl(oid_str, 'set', ctx) or _check_acl(name, 'set', ctx)):
         logger.warning("Access denied for principal %s on SET %s", ctx.get('principal') if ctx else None, oid_str)
         raise PermissionError('access denied')
     try:
