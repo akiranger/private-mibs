@@ -19,9 +19,22 @@ class SQLiteAdapter:
         dirpath = os.path.dirname(self.path)
         if dirpath:
             os.makedirs(dirpath, exist_ok=True)
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        # enable WAL mode and a busy timeout to improve concurrency for readers/writers
+        self._conn = sqlite3.connect(self.path, check_same_thread=False, timeout=30)
         self._conn.row_factory = sqlite3.Row
         self._in_transaction = False
+        try:
+            cur = self._conn.cursor()
+            # Set busy timeout to 30s to reduce SQLITE_BUSY on concurrent writes
+            cur.execute('PRAGMA busy_timeout = 30000')
+            # Enable WAL for better concurrent reads/writes
+            cur.execute("PRAGMA journal_mode = WAL")
+            # Set synchronous to NORMAL for a balance between durability and performance on embedded devices
+            cur.execute("PRAGMA synchronous = NORMAL")
+            self._conn.commit()
+        except Exception:
+            # If pragmas fail, continue with defaults but log silently
+            pass
 
     def execute(self, sql, params=()):
         cur = self._conn.cursor()
