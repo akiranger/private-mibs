@@ -189,6 +189,10 @@ def _check_acl(oid_or_handler, op, ctx):
     # if no explicit entry, default allow both GET and SET (tests expect permissive default)
     if not entry:
         return True
+    # If no explicit ACL entry, default to permissive (support existing tests and developer expectations)
+    if not entry:
+        return True
+
     # entry may specify booleans or lists per op. Handle each op separately.
     # If both read/write are explicit booleans, use them directly.
     read_val = entry.get('read')
