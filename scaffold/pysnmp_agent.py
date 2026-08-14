@@ -536,6 +536,17 @@ def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
                             resolved_oid = f"{oid}.{idx}" if not oid.endswith('.') else f"{oid}{idx}"
                         else:
                             resolved_oid = f"{next_cand}.{idx}" if not next_cand.endswith('.') else f"{next_cand}{idx}"
+                        # Prefer to call the handler's get function directly when available
+                        # to avoid relying on OID_MAP lookup for symbolic prefixes.
+                        get_fn = getattr(mod, f'get_{name}', None)
+                        if get_fn:
+                            try:
+                                val = _call_flexible(get_fn, resolved_oid, ctx)
+                                results.append((resolved_oid, val))
+                                continue
+                            except Exception:
+                                logger.exception('handler get failed for %s', resolved_oid)
+                                # fallthrough to generic handle_get below
                         val = handle_get(resolved_oid, ctx)
                         results.append((resolved_oid, val))
                         continue

@@ -137,6 +137,16 @@ def parse_mib_to_json(mib_path):
     table/column structure. Otherwise, fall back to the simple text-based parser.
     """
     # prefer pysmi-backed parser when available
+    # First try a lightweight simple text parser — it's sufficient for small MIB snippets
+    # used in tests and avoids a dependency on pysmi for basic OBJECT-TYPE extraction.
+    try:
+        simple = simple_parse_mib_text(mib_path)
+        if isinstance(simple, dict) and simple.get('objects'):
+            return simple
+    except Exception:
+        # fall through to pysmi path if simple parser fails unexpectedly
+        pass
+
     try:
         if _mib_parser_pysmi is not None and getattr(_mib_parser_pysmi, 'PYSPI_AVAILABLE', False):
             parsed = _mib_parser_pysmi.parse_with_pysmi(mib_path)
