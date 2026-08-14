@@ -244,10 +244,13 @@ def next_oid_{name}(current_oid=None):
 
 def _snmp_type_to_sql(snmp_type):
     t = (snmp_type or '').lower()
-    if 'integer' in t or 'int' in t:
+    # integer-like types
+    if 'integer' in t or 'int' in t or 'unsigned' in t:
         return 'INTEGER'
+    # text / octet types
     if 'octet' in t or 'string' in t or 'oid' in t:
         return 'TEXT'
+    # counters / gauges are numeric
     if 'counter' in t or 'timeticks' in t or 'gauge' in t:
         return 'INTEGER'
     return 'TEXT'

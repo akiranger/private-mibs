@@ -173,19 +173,43 @@ def load_handler(name, retries=2, backoff=0.05):
 def _call_flexible(fn, *args):
     """Call fn trying multiple signatures for backwards compatibility.
 
-    Tries: fn(*args), fn(*args[1:]), fn() etc. Useful when generated handlers vary.
+    Tries a set of common signatures in order to accommodate generated handlers with
+    different expected parameters (oid, value, ctx) vs (ctx, value), etc.
+    Order tried:
+      1. fn(*args)
+      2. fn(*args[1:])  -- drop leading oid
+      3. if len(args) >= 3: fn(args[2], args[1])  -- treat last as ctx, middle as value
+      4. if len(args) >= 2: fn(args[1]) -- value-only
+      5. fn() -- no-arg
     """
+    # 1: exact
     try:
         return fn(*args)
     except TypeError:
+        pass
+    # 2: drop first (common for get handlers: (oid, ctx) -> expect (ctx,))
+    try:
+        return fn(*args[1:])
+    except TypeError:
+        pass
+    # 3: interpret (oid, value, ctx) -> (ctx, value)
+    if len(args) >= 3:
         try:
-            # drop first arg
-            return fn(*args[1:])
+            return fn(args[2], args[1])
         except TypeError:
-            try:
-                return fn()
-            except TypeError:
-                raise
+            pass
+    # 4: value-only
+    if len(args) >= 2:
+        try:
+            return fn(args[1])
+        except TypeError:
+            pass
+    # 5: no-arg
+    try:
+        return fn()
+    except TypeError:
+        # no matching signature
+        raise
 
 
 def handle_get(oid_str, ctx=None):
