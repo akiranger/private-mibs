@@ -48,6 +48,16 @@ def load_handler(name):
 
 - 実装時は pysnmp の具体的な API (CommandResponder/Context/Managed Objects) を利用し、GET/SET/GETNEXT を正しくサポートすること。
 - パフォーマンスを考慮してハンドラモジュールのキャッシュを行う。
-- セキュリティ: SNMP v3 認証/暗号化の設定を検証する。
+- セキュリティ: SNMPv3 認証/暗号化の設定を検証する。実運用では必須。推奨項目:
+  1. pysnmp での USM (ユーザ名、認証アルゴリズム、プライバシー暗号) の設定例を提供すること
+  2. エージェント側で principal/user 情報を取得して ACL に紐付ける（scaffold/pysnmp_agent.py の ctx 引数を利用）
+  3. 管理トラフィックは管理専用ネットワークか制限されたACL経由のみ許可する
+  4. SNMPv1/2c は運用では無効化を推奨し、どうしても必要な場合は読み取り専用にする
+
+追加: pysnmp_integration での実装ガイドライン
+- CommandResponder あるいは Agent/Context を構築して SNMPv3 の USM ユーザを登録する例を README に追加する。
+- pysnmp の Context から principal 情報を抽出して、pysnmp_agent.handle_get/handle_set に ctx={'principal': username} のように渡すことで ACL を評価できる。
+
+このファイルはプロトタイプの設計と実装ガイドを提供します。次のタスクとしては上記雛形を実装し、簡単な GET/SET の統合テストを追加します。
 
 このファイルはプロトタイプの設計と実装ガイドを提供します。次のタスクとしては上記雛形を実装し、簡単な GET/SET の統合テストを追加します。

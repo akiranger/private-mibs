@@ -20,6 +20,34 @@ GENERATED_DIR = os.path.join(os.path.dirname(__file__), 'generated_handlers')
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
+# Simple ACL mapping: handler name -> allowed operations ("get","set") and allowed principals
+# In real deployments, integrate with SNMPv3 user credentials and engineID; this is a placeholder.
+ACL_MAP = {
+    # 'myScalar': {'get': ['public'], 'set': ['admin']},
+}
+
+
+def _check_access(handler_name, op, ctx):
+    """Check whether ctx indicates permission to perform op on handler_name.
+
+    ctx is expected to be a dict-like with keys like 'principal' (e.g., SNMPv3 user).
+    This function is a conservative gate: if ACL_MAP has an entry for the handler,
+    only listed principals are allowed. If no ACL entry, allow read but deny write by default.
+    """
+    principal = None
+    if ctx and isinstance(ctx, dict):
+        principal = ctx.get('principal') or ctx.get('user')
+    perms = ACL_MAP.get(handler_name)
+    if not perms:
+        # default: allow GETs, disallow SETs unless explicitly permitted
+        return op == 'get'
+    allowed = perms.get(op, [])
+    if not allowed:
+        return False
+    if principal is None:
+        return False
+    return principal in allowed
+
 
 def load_handler(name):
     modpath = os.path.join(GENERATED_DIR, f'{name}.py')
@@ -54,6 +82,10 @@ def handle_get(oid_str, ctx=None):
     if not fn:
         logger.error("Handler '%s' missing get_%s", name, name)
         raise AttributeError(f'get_{name} not found in handler')
+    # ACL check
+    if not _check_access(name, 'get', ctx):
+        logger.warning("Access denied for principal %s on GET %s", ctx.get('principal') if ctx else None, oid_str)
+        raise PermissionError('access denied')
     try:
         return fn(ctx)
     except Exception:
@@ -76,6 +108,10 @@ def handle_set(oid_str, value, ctx=None):
     if not fn:
         logger.error("Handler '%s' missing set_%s", name, name)
         raise AttributeError(f'set_{name} not found in handler')
+    # ACL check
+    if not _check_access(name, 'set', ctx):
+        logger.warning("Access denied for principal %s on SET %s", ctx.get('principal') if ctx else None, oid_str)
+        raise PermissionError('access denied')
     try:
         return fn(ctx, value)
     except Exception:
