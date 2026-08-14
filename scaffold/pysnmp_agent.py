@@ -575,7 +575,14 @@ def handle_getbulk(start_oids, non_repeaters=0, max_repetitions=10, ctx=None):
         any_appended = False
         for oid in repeating_oids:
             try:
-                seek = seek_positions.get(oid, _oid_to_tuple(oid))
+                # Safely obtain seek position: prefer stored value, otherwise parse without raising
+                if oid in seek_positions:
+                    seek = seek_positions[oid]
+                else:
+                    try:
+                        seek = _oid_to_tuple(oid)
+                    except ValueError:
+                        seek = _oid_prefix_tuple(oid)
                 candidate = _find_next_candidate_after(seek)
                 if not candidate:
                     continue
