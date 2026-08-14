@@ -70,12 +70,19 @@ def set_{name}(oid, value, ctx=None):
     else:
         # tables: expect dict or simple value
         if isinstance(value, dict):
-            db.upsert('{name}', value, unique_cols={unique_cols})
-            return True
+            # use transaction to ensure multi-column upserts are atomic
+            try:
+                with db.transaction() as cur:
+                    # simple upsert per provided keys
+                    db.upsert('{name}', value, unique_cols={unique_cols})
+                return True
+            except Exception:
+                return False
         else:
             # set single column 'value' if present
             try:
-                db.upsert('{name}', {{'value': str(value), 'updated_at': now}}, unique_cols={unique_cols})
+                with db.transaction():
+                    db.upsert('{name}', {{'value': str(value), 'updated_at': now}}, unique_cols={unique_cols})
                 return True
             except Exception:
                 return False
