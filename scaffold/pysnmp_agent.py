@@ -311,8 +311,8 @@ def handle_get(oid_str, ctx=None):
     if not fn:
         logger.error("Handler '%s' missing get_%s", name, name)
         raise AttributeError(f'get_{name} not found in handler')
-    # ACL check using both OID and handler name
-    if not (_check_acl(oid_str, 'get', ctx) and _check_acl(name, 'get', ctx)):
+    # ACL check: allow if either OID-level or handler-level ACL permits the operation
+    if not (_check_acl(oid_str, 'get', ctx) or _check_acl(name, 'get', ctx)):
         logger.warning("Access denied for principal %s on GET %s", ctx.get('principal') if ctx else None, oid_str)
         raise PermissionError('access denied')
     try:
@@ -329,8 +329,8 @@ def handle_set(oid_str, value, ctx=None):
     if not name:
         logger.warning("SET for unmapped OID: %s", oid_str)
         raise KeyError(f'OID not mapped: {oid_str}')
-    # ACL check using both OID and handler name
-    if not (_check_acl(oid_str, 'set', ctx) and _check_acl(name, 'set', ctx)):
+    # ACL check: allow if either OID-level or handler-level ACL permits the operation
+    if not (_check_acl(oid_str, 'set', ctx) or _check_acl(name, 'set', ctx)):
         logger.warning("Access denied for principal %s on SET %s", ctx.get('principal') if ctx else None, oid_str)
         raise PermissionError('access denied')
     try:
