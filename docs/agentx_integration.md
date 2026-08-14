@@ -4,6 +4,8 @@ AgentX との統合（ガイド）
 
 - net-snmp の AgentX と直接接続するコードは含まれていません。agentx_demo.py は生成ハンドラをローカルで呼び出す模擬ツールです。
 
+*updated:* 詳細な pass_persist ベースの統合手順は docs/agentx_integration_full.md を参照してください。
+
 統合の選択肢
 
 1) net-snmp の subagent を C で実装して Python ハンドラを呼ぶ
