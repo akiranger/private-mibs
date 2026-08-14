@@ -15,6 +15,6 @@ python scaffold\mib_parser.py path/to/MIB > path/to/schema.json
 
 pysmi を使うには
 
-pip install pysmi
+pip install pysmi pysnmp
 
-pysmi を使って正確にパースする実装例は scaffold/mib_parser.py にコメントでヒントを残しています。
+このリポジトリには pysmi を用いた実装例として scaffold/mib_parser_pysmi.py が含まれています。mib_parser.py は実行時に pysmi が利用可能ならば自動的に pysmi ベースの抽出（OID ドット表記、型、テーブル/カラム情報）を使い、導入されていない場合はフォールバックのテキストスキャンを継続します。
