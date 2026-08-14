@@ -29,6 +29,43 @@ ACL_MAP = {
 
 GENERATED_DIR = os.path.join(os.path.dirname(__file__), 'generated_handlers')
 
+# SNMPv3 USM user store (in-memory). For production, use secure secret storage.
+_USM_USERS = {}
+
+def register_usm_user(username, auth_protocol=None, auth_key=None, priv_protocol=None, priv_key=None):
+    """Register an SNMPv3 USM user in-memory.
+
+    NOTE: This stores secrets in process memory only. Production deployments must
+    use a secure secrets manager and restrict filesystem access if persisted.
+
+    auth_protocol / priv_protocol should be strings like 'MD5','SHA','AES'.
+    """
+    if not username:
+        raise ValueError('username required')
+    _USM_USERS[username] = {
+        'auth_protocol': auth_protocol,
+        'auth_key': auth_key,
+        'priv_protocol': priv_protocol,
+        'priv_key': priv_key,
+    }
+
+def load_usm_users_from_file(path):
+    """Load USM users from a JSON file containing a list of user objects.
+
+    File format example:
+      [
+        {"username": "admin", "auth_protocol":"SHA", "auth_key":"...", "priv_protocol":"AES", "priv_key":"..."}
+      ]
+
+    THIS IS CONVENIENCE FOR DEV/TEST ONLY. Use secret stores for production.
+    """
+    import json
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    for u in data:
+        register_usm_user(u.get('username'), u.get('auth_protocol'), u.get('auth_key'), u.get('priv_protocol'), u.get('priv_key'))
+
+
 
 def load_handler(name, retries=2, backoff=0.05):
     """Dynamically load a generated handler module by name.
@@ -75,18 +112,18 @@ def handle_get(oid_str, ctx=None):
         fn = getattr(mod, f'get_{name}', None)
         if not fn:
             raise AttributeError(f'get_{name} not found in handler')
-            # Call handler with flexible signature support for legacy handlers.
+        # Call handler with flexible signature support for legacy handlers.
+        try:
+            return fn(oid_str, ctx)
+        except TypeError:
             try:
-                return fn(oid_str, ctx)
+                return fn(ctx)
             except TypeError:
-                try:
-                    return fn(ctx)
-                except TypeError:
-                    return fn()
-        except Exception:
-            logger.exception('handle_get failed for %s', oid_str)
-            # Reraise to let caller decide SNMP error handling, but keep agent alive
-            raise
+                return fn()
+    except Exception:
+        logger.exception('handle_get failed for %s', oid_str)
+        # Reraise to let caller decide SNMP error handling, but keep agent alive
+        raise
 
 
 def handle_set(oid_str, value, ctx=None):
