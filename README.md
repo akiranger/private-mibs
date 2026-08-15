@@ -34,8 +34,6 @@ The repository is intended as a lightweight experimental foundation for MIB-awar
 ├── example/
 ├── scaffold/
 │   ├── generated_handlers/
-│   ├── generated_handlers_improved/
-│   ├── generated_handlers_text/
 │   ├── mibs/
 │   └── ...
 ├── tests/
@@ -61,7 +59,7 @@ python scaffold\mib_parser_text_advanced.py example\EXAMPLE-MIB > docs\schema_ex
 3. Generate handlers from the schema
 
 ```bash
-python scaffold\generator.py docs\schema_example_text.json scaffold\generated_handlers_improved
+python scaffold\generator.py docs\schema_example_text.json scaffold\generated_handlers
 ```
 
 4. Run the demo flow (simulated GET/SET)
