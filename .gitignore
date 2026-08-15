@@ -63,16 +63,12 @@ Thumbs.db
 # ignore files inside generated_handlers and variants, but not the directory itself (so .gitkeep can be tracked)
 scaffold/generated_handlers/*
 scaffold/generated_handlers_*/**
-scaffold/generated_handlers_improved/*
-scaffold/generated_handlers_text/*
 scaffold/mib_py_*/
 scaffold/*.pyc
 
 # Allow .gitkeep files in generated folders so empty folders are preserved
 !important: keep .gitkeep in generated folders
 !scaffold/generated_handlers/.gitkeep
-!scaffold/generated_handlers_improved/.gitkeep
-!scaffold/generated_handlers_text/.gitkeep
 !scaffold/mibs/.gitkeep
 !data/.gitkeep
 
