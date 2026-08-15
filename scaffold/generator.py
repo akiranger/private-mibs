@@ -397,12 +397,27 @@ def generate_handlers(schema_path, outdir):
 
         fname = os.path.join(outdir, f'{safe_name}.py')
         with open(fname, 'w', encoding='utf-8') as fh:
-            fh.write(HANDLER_TMPL.format(name=safe_name, columns=cols_literal, is_scalar=str(is_scalar), unique_cols=unique_literal, oid_base='None', integer_cols=integer_literal))
+            # Use simple literal replacements to avoid str.format parsing embedded dict braces
+            out = HANDLER_TMPL
+            out = out.replace('{name}', safe_name)
+            out = out.replace('{columns}', cols_literal)
+            out = out.replace('{is_scalar}', str(is_scalar))
+            out = out.replace('{unique_cols}', unique_literal)
+            out = out.replace('{oid_base}', 'None')
+            out = out.replace('{integer_cols}', integer_literal)
+            fh.write(out)
 
     # If no objects, create a placeholder
     if not schema.get('objects'):
         with open(os.path.join(outdir, f'{mib}_placeholder.py'), 'w', encoding='utf-8') as fh:
-            fh.write(HANDLER_TMPL.format(name='placeholder', columns="{'value':'TEXT','updated_at':'TEXT'}", is_scalar='True', oid_base='None', integer_cols='[]'))
+            out = HANDLER_TMPL
+            out = out.replace('{name}', 'placeholder')
+            out = out.replace('{columns}', "{'value':'TEXT','updated_at':'TEXT'}")
+            out = out.replace('{is_scalar}', 'True')
+            out = out.replace('{unique_cols}', 'None')
+            out = out.replace('{oid_base}', 'None')
+            out = out.replace('{integer_cols}', '[]')
+            fh.write(out)
 
 
 if __name__ == '__main__':
