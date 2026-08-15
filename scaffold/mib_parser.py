@@ -9,6 +9,11 @@ MIB を解析して内部 JSON スキーマを作るスクリプト（pysmi 利�
 import sys
 import json
 
+
+def _has_valid_objects(schema):
+    return isinstance(schema, dict) and isinstance(schema.get('objects'), list) and len(schema['objects']) > 0
+
+
 # Lazy import to keep file usable even if deps are missing
 try:
     from pysmi.reader import file
@@ -22,7 +27,7 @@ except Exception:
 
 
 def simple_parse_mib_text(path):
-    """Improved naive parser for MIB text when pysmi is unavailable.
+    """Improved naive parser for MIB text when newer parsers are unavailable.
 
     This scans for OBJECT-TYPE blocks and attempts to extract name, syntax,
     access, description, and oid_assignment lines when present.
@@ -33,7 +38,6 @@ def simple_parse_mib_text(path):
     with open(path, 'r', encoding='utf-8', errors='ignore') as f:
         text = f.read()
 
-    # Normalize line endings and split into lines for scanning
     lines = text.replace('\r\n', '\n').split('\n')
     n = len(lines)
 
@@ -41,7 +45,6 @@ def simple_parse_mib_text(path):
     while i < n:
         line = lines[i]
         if 'OBJECT-TYPE' in line:
-            # find name: prefer token before OBJECT-TYPE on the same line, fallback to previous non-empty line
             name = None
             parts = line.strip().split()
             if len(parts) >= 2 and 'OBJECT-TYPE' in parts:
@@ -58,7 +61,6 @@ def simple_parse_mib_text(path):
                 if j >= 0:
                     name = lines[j].strip().split()[0]
 
-            # scan forward for fields until blank line or next OBJECT-TYPE
             syntax = None
             access = None
             description = None
@@ -69,23 +71,16 @@ def simple_parse_mib_text(path):
             in_description = False
             while k < n and 'OBJECT-TYPE' not in lines[k] and lines[k].strip() != '':
                 l = lines[k].strip()
-                # SYNTAX
                 if l.startswith('SYNTAX'):
                     syntax = l[len('SYNTAX'):].strip()
-                # ACCESS or MAX-ACCESS
                 elif l.startswith('MAX-ACCESS') or l.startswith('ACCESS'):
                     parts = l.split()
                     if len(parts) >= 2:
                         access = parts[-1].strip()
-                # DESCRIPTION block
                 elif l.startswith('DESCRIPTION'):
-                    # may begin with DESCRIPTION "... possibly multi-line ..."
                     in_description = True
-                    # capture following lines until closing quote
-                    # find the first occurrence of '"' on this line
                     rest = l[len('DESCRIPTION'):].lstrip()
                     if '"' in rest:
-                        # start of description content
                         pos = rest.find('"')
                         rest_content = rest[pos+1:]
                         if rest_content.endswith('"'):
@@ -93,20 +88,13 @@ def simple_parse_mib_text(path):
                             in_description = False
                         else:
                             desc_lines.append(rest_content)
-                    else:
-                        # description starts on next lines
-                        pass
                 elif in_description:
-                    # look for closing quote
                     if l.endswith('"'):
                         desc_lines.append(l[:-1])
                         in_description = False
                     else:
                         desc_lines.append(l)
-                # OID assignment ("::= { parent n }")
                 elif '::=' in l and '{' in l and '}' in l:
-                    # capture the RHS as oid_assignment
-                    # e.g. myScalar ::= { parent 1 }
                     rhs = l.split('::=')[-1].strip()
                     oid_assignment = rhs
                 k += 1
@@ -119,43 +107,52 @@ def simple_parse_mib_text(path):
         else:
             i += 1
 
-    return {'mib': path, 'objects': objs}
+    return {'mib': path, 'objects': objs, 'source': 'text-simple'}
 
 
-# Attempt to import the richer pysmi-based parser helper if present
 try:
     from . import mib_parser_pysmi as _mib_parser_pysmi
 except Exception:
     _mib_parser_pysmi = None
 
+try:
+    from . import mib_parser_pysnmp_loader as _mib_parser_pysnmp_loader
+except Exception:
+    _mib_parser_pysnmp_loader = None
+
+try:
+    from . import mib_parser_text_advanced as _mib_parser_text_advanced
+except Exception:
+    _mib_parser_text_advanced = None
+
 
 def parse_mib_to_json(mib_path):
-    """Parse a MIB file to the internal JSON schema.
+    """Automatically select the best parser based on available dependencies.
 
-    If pysmi (and the companion mib_parser_pysmi helper) is available, prefer the
-    pysmi-backed extraction which yields dotted OID strings, precise types, and
-    table/column structure. Otherwise, fall back to the simple text-based parser.
+    Priority order:
+      1. pysmi-backed parser
+      2. pysnmp MibBuilder loader
+      3. advanced text parser
+      4. legacy simple text scanner
     """
-    # prefer pysmi-backed parser when available
-    # First try a lightweight simple text parser — it's sufficient for small MIB snippets
-    # used in tests and avoids a dependency on pysmi for basic OBJECT-TYPE extraction.
-    try:
-        simple = simple_parse_mib_text(mib_path)
-        if isinstance(simple, dict) and simple.get('objects'):
-            return simple
-    except Exception:
-        # fall through to pysmi path if simple parser fails unexpectedly
-        pass
+    candidates = []
 
-    try:
-        if _mib_parser_pysmi is not None and getattr(_mib_parser_pysmi, 'PYSPI_AVAILABLE', False):
-            parsed = _mib_parser_pysmi.parse_with_pysmi(mib_path)
-            # If pysmi produced useful objects, prefer it. Otherwise fall back to the simple text parser
-            if isinstance(parsed, dict) and parsed.get('objects'):
+    if _mib_parser_pysmi is not None and getattr(_mib_parser_pysmi, 'PYSPI_AVAILABLE', False):
+        candidates.append(('pysmi', lambda: _mib_parser_pysmi.parse_with_pysmi(mib_path)))
+
+    if _mib_parser_pysnmp_loader is not None and getattr(_mib_parser_pysnmp_loader, 'PYSNMP_AVAILABLE', False):
+        candidates.append(('pysnmp-loader', lambda: _mib_parser_pysnmp_loader.parse_with_pysnmp(mib_path)))
+
+    if _mib_parser_text_advanced is not None:
+        candidates.append(('text-advanced', lambda: _mib_parser_text_advanced.parse_mib(mib_path)))
+
+    for source_name, parser_fn in candidates:
+        try:
+            parsed = parser_fn()
+            if _has_valid_objects(parsed):
                 return parsed
-    except Exception:
-        # if anything goes wrong with pysmi path, continue to fallback
-        pass
+        except Exception:
+            continue
 
     return simple_parse_mib_text(mib_path)
 
