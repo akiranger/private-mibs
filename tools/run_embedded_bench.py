@@ -38,7 +38,7 @@ if __name__ == '__main__':
 
     def dummy_import():
         # lightweight import path: simulate agent import
-        import scaffold.pysnmp_agent as agent
+        import src.runtime.pysnmp_agent as agent
         # warm a small function
         agent.OID_MAP.clear()
 

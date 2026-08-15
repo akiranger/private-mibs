@@ -59,21 +59,28 @@ temp/
 .DS_Store
 Thumbs.db
 
-# Generated artifacts (don't commit generated code or example output)
-# ignore files inside generated_handlers and variants, but not the directory itself (so .gitkeep can be tracked)
-scaffold/generated_handlers/*
-scaffold/generated_handlers_*/**
-scaffold/mib_py_*/
-scaffold/*.pyc
+# Generated artifacts (don't commit generated code or runtime output)
+# ignore generated handler modules and deployment mapping files, but keep the directory placeholder
+src/deploy/generated_handlers/*.py
+src/deploy/generated_handlers/**/*.py
+src/deploy/generated_handlers/*.pyc
+src/deploy/agentx_mapping.json
+src/deploy/agentx_mapping.*.json
+src/deploy/mib_py_*/
+
+# Generated MIB and local runtime artifacts
+src/mib/resources/*.txt
+src/mib/resources/*.json
+src/mib/resources/**/*.txt
+src/mib/resources/**/*.json
 
 # Allow .gitkeep files in generated folders so empty folders are preserved
 !important: keep .gitkeep in generated folders
-!scaffold/generated_handlers/.gitkeep
-!scaffold/mibs/.gitkeep
 !data/.gitkeep
-
-# Generated schema examples and parser/compiler temp files
-docs/schema_example*.json
+!src/deploy/agentx_mapping.example.json
+!src/deploy/generated_handlers/.gitkeep
+!src/mib/resources/example/example_schema.json
+!src/mib/resources/example/EXAMPLE-MIB.txt
 
 # AgentX demo database (already covered by *.sqlite but explicit)
 data/db.sqlite

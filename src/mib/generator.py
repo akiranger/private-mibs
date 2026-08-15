@@ -17,7 +17,7 @@ This module provides:
 - next_oid(current_oid) : simple next-row support for GETNEXT
 """
 
-from ..persistence import SQLiteAdapter
+from src.runtime.persistence import SQLiteAdapter
 import datetime
 
 DB_PATH = 'data/db.sqlite'

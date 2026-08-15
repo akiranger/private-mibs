@@ -1,4 +1,4 @@
-import scaffold.generator as gen
+from src.mib import generator as gen
 
 
 def test_snmp_type_to_sql():

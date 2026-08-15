@@ -1,6 +1,6 @@
 import unittest
 
-from scaffold.persistence import SQLiteAdapter
+from src.runtime.persistence import SQLiteAdapter
 
 
 class TestPersistence(unittest.TestCase):

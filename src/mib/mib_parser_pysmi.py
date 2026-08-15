@@ -5,7 +5,7 @@ This script attempts to use pysmi to compile a MIB into pysnmp Python modules an
 extract OBJECT-TYPE and table metadata into a normalized JSON schema.
 
 Usage:
-  python scaffold\mib_parser_pysmi.py path/to/MIB > schema.json
+  python src/mib/mib_parser_pysmi.py path/to/MIB > schema.json
 
 Notes:
 - Requires pysmi and pysnmp for full extraction (pip install pysmi pysnmp)

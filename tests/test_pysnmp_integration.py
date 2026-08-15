@@ -1,14 +1,14 @@
 import unittest
 import os
 
-from scaffold import pysnmp_agent
+from src.runtime import pysnmp_agent
 
 
 class TestPysnmpIntegration(unittest.TestCase):
     def setUp(self):
         # write a test handler module dynamically so tests can run without committing it
         import os
-        handlers_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scaffold', 'generated_handlers')
+        handlers_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src', 'deploy', 'generated_handlers')
         os.makedirs(handlers_dir, exist_ok=True)
         fh = os.path.join(handlers_dir, 'testscalar.py')
         with open(fh, 'w', encoding='utf-8') as f:
@@ -29,7 +29,7 @@ def set_testscalar(ctx, v):
     def tearDown(self):
         # remove the dynamic handler file
         import os
-        fh = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scaffold', 'generated_handlers', 'testscalar.py')
+        fh = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src', 'deploy', 'generated_handlers', 'testscalar.py')
         try:
             os.remove(fh)
         except Exception:

@@ -2,12 +2,12 @@ import subprocess
 import sys
 import os
 
-# Simple smoke test: run agentx_demo with generated handlers
+# Simple smoke test: run runtime demo against generated handlers in src/deploy/generated_handlers
 
 def test_agentx_demo_smoke():
     cmds = [
-        [sys.executable, os.path.join('scaffold', 'agentx_demo.py'), 'myScalar', 'set', '321'],
-        [sys.executable, os.path.join('scaffold', 'agentx_demo.py'), 'myScalar', 'get'],
+        [sys.executable, os.path.join('src', 'runtime', 'agentx_demo.py'), 'myScalar', 'set', '321'],
+        [sys.executable, os.path.join('src', 'runtime', 'agentx_demo.py'), 'myScalar', 'get'],
     ]
     for c in cmds:
         print('RUN:', c)

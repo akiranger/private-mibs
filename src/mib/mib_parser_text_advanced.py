@@ -3,7 +3,7 @@ Advanced text-based MIB parser (fallback when pysmi/pysnmp compilation unavailab
 Extracts OBJECT-TYPE blocks, SYNTAX, MAX-ACCESS, OID assignment, and SEQUENCE fields for ENTRYs.
 
 Usage:
-  python scaffold\mib_parser_text_advanced.py path/to/MIB > schema.json
+  python src/mib/mib_parser_text_advanced.py path/to/MIB > schema.json
 """
 import re
 import sys

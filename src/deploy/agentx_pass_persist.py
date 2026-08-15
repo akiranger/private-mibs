@@ -10,7 +10,7 @@ mapping.json format:
   "1.3.6.1.4.1.53864.1.0": "myScalar"
 }
 
-Handler module layout (scaffold/generated_handlers/<name>.py):
+Handler module layout (src/deploy/generated_handlers/<name>.py):
 - get_<name>(ctx) -> returns string or int
 - set_<name>(ctx, value) -> returns True/False or raise
 
@@ -35,15 +35,15 @@ def load_mapping(path):
 
 
 def load_handler(name):
-    # Load scaffold.generated_handlers.<name> by file path
+    # Load src.deploy.generated_handlers.<name> by file path
     handlers_dir = os.path.join(os.path.dirname(__file__), 'generated_handlers')
     modpath = os.path.join(handlers_dir, f'{name}.py')
     if not os.path.exists(modpath):
         raise FileNotFoundError(modpath)
-    fullname = f'scaffold.generated_handlers.{name}'
+    fullname = f'src.deploy.generated_handlers.{name}'
     spec = importlib.util.spec_from_file_location(fullname, modpath)
     mod = importlib.util.module_from_spec(spec)
-    mod.__package__ = 'scaffold.generated_handlers'
+    mod.__package__ = 'src.deploy.generated_handlers'
     spec.loader.exec_module(mod)
     sys.modules[fullname] = mod
     return mod

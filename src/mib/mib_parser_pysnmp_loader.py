@@ -2,7 +2,7 @@
 MIB -> JSON schema using pysnmp.MibBuilder
 
 Usage:
-  python scaffold\mib_parser_pysnmp_loader.py path/to/MIB > schema.json
+  python src/mib/mib_parser_pysnmp_loader.py path/to/MIB > schema.json
 
 This script attempts to load the MIB using pysnmp's MibBuilder. It adds the MIB's directory
 as a local source and also configures the online SNMPlabs source as a fallback to fetch

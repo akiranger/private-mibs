@@ -1,113 +1,137 @@
-# AgentX MIB Persistence Framework
+# MIB Persistence Framework
 
-A prototype framework for generating MIB-driven schemas and managing AgentX-style subagent state with SQLite for persistence and Redis for volatile runtime data.
+MIB（SMIv2）からPythonハンドラを自動生成し、SQLiteとRedisを活用してSNMPエージェント状態を管理するプロトタイプフレームワークです。
 
-## Overview
+## 📋 プロジェクト概要
 
-This project demonstrates a workflow for:
+このプロジェクトは、MIB定義から完全なSNMPエージェントまでの一貫したワークフローを実現します：
 
-- parsing SMIv2 MIB definitions into schema data
-- generating Python handlers from that schema
-- persisting managed values with SQLite
-- using Redis for transient or cache-like state
-- simulating GET/SET operations for prototype validation
+1. **MIB解析** - SMIv2ファイルをJSONスキーマに変換
+2. **ハンドラ生成** - スキーマからPythonハンドラを自動生成
+3. **永続化管理** - SQLiteで耐久的なデータ、Redisで一時的なデータを管理
+4. **デプロイ** - net-snmpと連携し、実運用対応
 
-The repository is intended as a lightweight experimental foundation for MIB-aware AgentX development.
+## 🚀 3分でスタート
 
-## Features
+### 前提条件
 
-- SMIv2 MIB parsing and schema extraction
-- Generator-based handler creation from schema definitions
-- SQLite-backed persistent state management
-- Redis-backed ephemeral state management
-- Demo flow for simulated GET/SET behavior
-- Example schema and documentation for experimentation
+- Python 3.8+
+- pip
 
-## Project Structure
-
-```text
-.
-├── README.md
-├── data/
-├── design/
-├── docs/
-├── example/
-├── scaffold/
-│   ├── generated_handlers/
-│   ├── mibs/
-│   └── ...
-├── tests/
-└── ...
-```
-
-## Quick Start
-
-Prerequisites: Python 3.8+
-
-1. Install optional dependencies
+### インストール & 実行
 
 ```bash
-pip install redis pysmi pysnmp
+# 1. 依存パッケージをインストール
+pip install pysmi pysnmp redis
+
+# 2. サンプルMIBからスキーマを生成
+python src/mib/mib_parser.py src/mib/resources/example/EXAMPLE-MIB \
+  > src/mib/resources/example/example_schema.json
+
+# 3. ハンドラを生成
+python src/mib/generator.py src/mib/resources/example/example_schema.json \
+  src/deploy/generated_handlers
+
+# 4. デモで動作確認（GET/SET模擬）
+python src/runtime/agentx_demo.py myScalar get      # 結果: None
+python src/runtime/agentx_demo.py myScalar set 123  # 設定
+python src/runtime/agentx_demo.py myScalar get      # 結果: 123
 ```
 
-2. Parse the sample MIB and generate a schema JSON
+詳細は [クイックスタート](docs/01_Overview.md) をご覧ください。
+
+## 📁 ディレクトリ構成
+
+| パス | 説明 |
+|------|------|
+| `src/mib/` | MIB解析、スキーマ生成、ハンドラ生成ツール |
+| `src/deploy/` | SNMPエージェント統合（pass_persist、マッピング） |
+| `src/runtime/` | デモ、pysnmp連携、永続化ライブラリ |
+| `docs/` | ドキュメント（アーキテクチャ、デプロイ、セキュリティ） |
+| `tests/` | 単体テスト、統合テスト |
+
+## 📚 ドキュメント
+
+| ドキュメント | 対象者 | 内容 |
+|-------------|--------|------|
+| [01_Overview.md](docs/01_Overview.md) | 全員 | 全体図、データフロー、主要コンポーネント |
+| [02_Architecture.md](docs/02_Architecture.md) | 開発者 | 詳細なアーキテクチャ、拡張ポイント |
+| [03_QuickStart.md](docs/03_QuickStart.md) | 初心者 | セットアップ、MIB生成、デモ実行 |
+| [04_Components.md](docs/04_Components.md) | 開発者 | Parser、Generator、Persistence API |
+| [05_Deployment.md](docs/05_Deployment.md) | 運用者 | pysnmp、pass_persist、systemdでのデプロイ |
+| [06_Security.md](docs/06_Security.md) | セキュリティ | SNMPv3、ACL、USM認証、入力検証 |
+
+## 🎯 主要機能
+
+- **自動生成** - MIBからPythonハンドラを自動コード化
+- **永続化** - SQLiteによる耐久的なデータ管理
+- **一時データ** - Redisによるキャッシュと揮発データ
+- **実運用対応** - net-snmpとの統合、pass_persist対応
+- **セキュリティ** - SNMPv3、ユーザ認証、ACL対応
+
+## 💡 使用例
+
+### ローカル開発（デモ実行）
+
+生成ハンドラをローカルで実行し、GET/SET動作を検証：
 
 ```bash
-python scaffold\mib_parser_text_advanced.py example\EXAMPLE-MIB > docs\schema_example_text.json
+python src/runtime/agentx_demo.py <object_name> get
+python src/runtime/agentx_demo.py <object_name> set <value>
 ```
 
-3. Generate handlers from the schema
+### 本番運用（pass_persist統合）
+
+snmpd経由で生成ハンドラを実行：
 
 ```bash
-python scaffold\generator.py docs\schema_example_text.json scaffold\generated_handlers
+# 1. マッピング設定
+cp src/deploy/agentx_mapping.example.json /etc/snmp/agentx_mapping.json
+
+# 2. snmpd.confに以下を追加
+pass_persist .1.3.6.1.4.1.53864 /usr/bin/python3 \
+  /opt/project/src/deploy/agentx_pass_persist.py \
+  /etc/snmp/agentx_mapping.json
+
+# 3. 動作確認
+snmpget -v2c -c public localhost 1.3.6.1.4.1.53864.1.0
 ```
 
-4. Run the demo flow (simulated GET/SET)
+詳細は [デプロイメントガイド](docs/05_Deployment.md) 参照。
+
+## 🔐 セキュリティに関する注意
+
+本番環境では以下を必須としてください：
+
+- ✅ **SNMPv3認証** - v1/v2cではなくv3を使用
+- ✅ **暗号化** - AESなどのプライバシー設定を有効化
+- ✅ **ACL** - 最小権限に基づくアクセス制御
+- ✅ **入力検証** - ハンドラで値の型と範囲をチェック
+
+詳細は [セキュリティガイド](docs/06_Security.md) をご覧ください。
+
+## 🛠️ 開発・テスト
 
 ```bash
-python scaffold\agentx_demo.py myScalar get
-python scaffold\agentx_demo.py myScalar set 123
+# テスト実行
+pytest tests/
+
+# 生成コード検証
+python tools/run_unit_gen_tests.py
+
+# パフォーマンステスト
+python tools/run_embedded_bench.py
 ```
 
-## Documentation
+## 📝 ライセンス
 
-Key documents:
+[LICENSE](LICENSE) 参照
 
-- [docs/overview.md](docs/overview.md)
-- [docs/quickstart.md](docs/quickstart.md)
-- [docs/parser.md](docs/parser.md)
-- [docs/persistence.md](docs/persistence.md)
-- [docs/generator.md](docs/generator.md)
-- [docs/architecture.md](docs/architecture.md)
-- [docs/agentx_integration.md](docs/agentx_integration.md)
+## 🤝 貢献
 
-## Notes
-
-- Generated code under `scaffold/generated_handlers*` is kept out of Git tracking via `.gitignore`; placeholder `.gitkeep` files are included so the directories remain in the repository.
-- Installing `pysmi` and `pysnmp` can improve MIB extraction accuracy, but a standard MIB repository or proper local MIB configuration may still be needed. See [docs/parser.md](docs/parser.md) and [docs/agentx_integration.md](docs/agentx_integration.md) for more information.
-- For quick integration with net-snmp on Linux, see `scaffold/agentx_pass_persist.py` (pass_persist helper) and docs/agentx_integration.md for configuration examples.
-
-## Contributing
-
-Issues and pull requests are welcome.
+Issues及びPull Requestは歓迎します。詳細は [SECURITY.md](SECURITY.md) をご覧ください。
 
 ---
 
-This project is a prototype for experimentation, schema-driven agent generation, and MIB persistence research.
-
-Deployment (snmpd + pass_persist) — quick steps
-
-1. Create mapping: copy scaffold/agentx_mapping.example.json -> /etc/snmp/agentx_mapping.json and edit OIDs as needed.
-2. Install or confirm net-snmp (snmpd) is present and writable config path is /etc/snmp/snmpd.conf.
-3. Add the pass_persist line to /etc/snmp/snmpd.conf:
-   pass_persist .1.3.6.1.4.1.53864 /usr/bin/python3 /opt/project/scaffold/agentx_pass_persist.py /etc/snmp/agentx_mapping.json
-4. (Optional) Deploy helper as a service for debugging: see docs/snmpd_systemd_examples.md for unit examples.
-5. Restart snmpd: sudo systemctl daemon-reload && sudo systemctl restart snmpd
-6. Verify: snmpget -v2c -c public localhost 1.3.6.1.4.1.53864.1.0
-
-For PR reviewers
-
-- This PR adds: scaffold/agentx_pass_persist.py, mapping example, docs/snmpd_systemd_examples.md and docs/agentx_integration_full.md. Verify that the pass_persist protocol and handler-loading behaviour match generated handlers and that the documentation describes safe deployment steps.
-- Testing: run the helper locally with:
-  echo -e "PING\nGET <oid>\n" | python3 scaffold/agentx_pass_persist.py scaffold/agentx_mapping.example.json
+このプロジェクトはMIBベースのエージェント開発のための軽量で実験的な基盤です。
 

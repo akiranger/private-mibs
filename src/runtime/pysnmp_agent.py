@@ -23,7 +23,7 @@ ACL_MAP = {
     # 'myScalar': {'read': ['public'], 'write': ['admin']},
 }
 
-GENERATED_DIR = os.path.join(os.path.dirname(__file__), 'generated_handlers')
+GENERATED_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'deploy', 'generated_handlers')
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -230,11 +230,11 @@ def load_handler(name, retries=2, backoff=0.05):
     modpath = os.path.join(GENERATED_DIR, f'{name}.py')
     if not os.path.exists(modpath):
         raise FileNotFoundError(modpath)
-    fullname = f'scaffold.generated_handlers.{name}'
+    fullname = f'src.deploy.generated_handlers.{name}'
     spec = importlib.util.spec_from_file_location(fullname, modpath)
     mod = importlib.util.module_from_spec(spec)
     # set package so relative imports in generated modules resolve
-    mod.__package__ = 'scaffold.generated_handlers'
+    mod.__package__ = 'src.deploy.generated_handlers'
     import sys
     # reuse cached module if already loaded so module-level state persists
     if fullname in sys.modules:

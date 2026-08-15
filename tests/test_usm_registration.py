@@ -2,7 +2,7 @@ import unittest
 import sys
 import types
 
-from scaffold import pysnmp_agent
+from src.runtime import pysnmp_agent
 
 class FakeConfig:
     def __init__(self):

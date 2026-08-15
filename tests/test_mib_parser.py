@@ -1,5 +1,5 @@
 import unittest
-from scaffold.mib_parser import parse_mib_to_json
+from src.mib.mib_parser import parse_mib_to_json
 import os
 
 class TestMibParser(unittest.TestCase):

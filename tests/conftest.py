@@ -6,7 +6,7 @@ import pytest
 
 @pytest.fixture(scope="session", autouse=True)
 def generate_handlers():
-    handlers_dir = os.path.join(os.path.dirname(__file__), '..', 'scaffold', 'generated_handlers')
+    handlers_dir = os.path.join(os.path.dirname(__file__), '..', 'src', 'deploy', 'generated_handlers')
     os.makedirs(handlers_dir, exist_ok=True)
     myscalar_path = os.path.join(handlers_dir, 'myScalar.py')
     content = '''# Minimal generated handler for tests

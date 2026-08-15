@@ -8,8 +8,8 @@ import sys
 import importlib
 import os
 
-# Ensure repo root is on sys.path so 'scaffold' package imports resolve even when executing from scaffold/
-repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Ensure repo root is on sys.path so src package imports resolve when running directly
+repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if repo_root not in sys.path:
     sys.path.insert(0, repo_root)
 
@@ -20,27 +20,25 @@ if len(sys.argv) < 3:
 name = sys.argv[1]
 op = sys.argv[2]
 
-# Ensure scaffold package is importable
+# Ensure runtime package is importable for generated handlers
 try:
-    import scaffold
-    import scaffold.persistence
+    import src.runtime.persistence  # noqa: F401
 except Exception as e:
-    print('Failed to import scaffold package:', e)
+    print('Failed to import src.runtime.persistence:', e)
     # continue, it may still work when loading module
 
 # Load handler module by file path from generated_handlers directory
-handlers_dir = os.path.join(os.path.dirname(__file__), 'generated_handlers')
+handlers_dir = os.path.join(repo_root, 'src', 'deploy', 'generated_handlers')
 modpath = os.path.join(handlers_dir, f'{name}.py')
 if not os.path.exists(modpath):
     print(f'Handler file not found: {modpath}')
     sys.exit(1)
 
 import importlib.util
-fullname = f'scaffold.generated_handlers.{name}'
+fullname = f'src.deploy.generated_handlers.{name}'
 spec = importlib.util.spec_from_file_location(fullname, modpath)
 mod = importlib.util.module_from_spec(spec)
-# ensure parent package is set so relative imports resolve
-mod.__package__ = 'scaffold.generated_handlers'
+mod.__package__ = 'src.deploy.generated_handlers'
 try:
     spec.loader.exec_module(mod)
     import sys as _sys

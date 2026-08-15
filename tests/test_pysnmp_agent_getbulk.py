@@ -1,4 +1,4 @@
-import scaffold.pysnmp_agent as agent
+from src.runtime import pysnmp_agent as agent
 
 
 def test_handle_getbulk_basic(monkeypatch):

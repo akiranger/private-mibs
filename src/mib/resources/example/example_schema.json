@@ -1,5 +1,5 @@
 {
-  "mib": ".\\scaffold\\EXAMPLE-MIB",
+  "mib": "src/mib/resources/example/EXAMPLE-MIB",
   "objects": [
     {
       "name": "MODULE-IDENTITY,",

@@ -3,7 +3,7 @@ import json
 import os
 import unittest
 
-from scaffold import pysnmp_agent
+from src.runtime import pysnmp_agent
 
 
 class TestAclLoading(unittest.TestCase):

@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import scaffold.pysnmp_agent as agent
+from src.runtime import pysnmp_agent as agent
 
 class FakeHandler:
     def __init__(self):

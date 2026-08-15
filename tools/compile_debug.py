@@ -5,7 +5,7 @@ from pysmi.compiler import MibCompiler
 from pysmi.codegen.pysnmp import PySnmpCodeGen
 import tempfile, os, sys
 
-mib_path='example/EXAMPLE-MIB'
+mib_path='src/mib/resources/example/EXAMPLE-MIB'
 mib_dir=os.path.dirname(os.path.abspath(mib_path))
 mib_name=os.path.splitext(os.path.basename(mib_path))[0]
 outdir=tempfile.mkdtemp(prefix='mib_py_')
